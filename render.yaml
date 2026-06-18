@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sfl-enrolment-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: CATALOGUE_URL
+        value: https://creds.curtin.edu.au
+      - key: CATALOGUE_TOKEN
+        sync: false
+      - key: ACCOUNT_ID
+        value: 1
