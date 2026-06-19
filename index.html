@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="SFL Monthly Enrolment Report — Canvas Catalogue dashboard for Curtin University Short Form Learning.">
+<title>SFL — Monthly Enrolment Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #111111; --surface: #1a1a1a; --surface2: #222222;
+  --border: #2a2a2a; --border2: #333333;
+  --text: #f0f0f0; --text2: #999999; --text3: #555555;
+  --gold: #cfa050; --gold-bg: rgba(207,160,80,0.08); --gold-border: rgba(207,160,80,0.2);
+  --green: #4caf82; --red: #e05555;
+  --radius: 8px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; }
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; max-width: 1100px; margin-left: auto; margin-right: auto; }
+.header-divider { width: 1px; height: 22px; background: var(--border2); }
+.header-title { font-size: 13px; color: var(--text2); letter-spacing: .02em; }
+.main { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -.02em; margin-bottom: 4px; }
+.subtitle { font-size: 14px; color: var(--text2); margin-bottom: 2rem; line-height: 1.6; }
+
+/* Controls */
+.controls { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; align-items: start; }
+.ctrl-section { display: flex; flex-direction: column; gap: 10px; }
+.ctrl-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--border2); background: transparent; font-size: 12px; font-weight: 500; color: var(--text2); cursor: pointer; font-family: inherit; transition: all .15s; }
+.preset-btn:hover { border-color: var(--gold); color: var(--gold); }
+.preset-btn.active { background: var(--gold-bg); border-color: var(--gold); color: var(--gold); }
+.date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.date-field label { display: block; font-size: 11px; color: var(--text3); margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+.date-field input[type=date] { width: 100%; padding: 7px 10px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 13px; color: var(--text); background: var(--surface2); outline: none; color-scheme: dark; font-family: inherit; }
+.date-field input[type=date]:focus { border-color: var(--gold); }
+.checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.checkbox-item { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid var(--border2); border-radius: 6px; cursor: pointer; user-select: none; transition: all .15s; }
+.checkbox-item:hover { border-color: var(--gold-border); background: var(--gold-bg); }
+.checkbox-item.checked { border-color: var(--gold-border); background: var(--gold-bg); }
+.checkbox-item input { width: 13px; height: 13px; accent-color: var(--gold); cursor: pointer; flex-shrink: 0; }
+.checkbox-item label { font-size: 12px; color: var(--text2); cursor: pointer; font-weight: 500; }
+.checkbox-item.checked label { color: var(--gold); }
+.btn { padding: 10px 20px; background: var(--gold); color: #111; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+.btn:hover:not(:disabled) { background: #d9aa60; }
+.btn:disabled { background: var(--border2); color: var(--text3); cursor: not-allowed; }
+.btn-outline { padding: 10px 20px; background: transparent; color: var(--text2); border: 1px solid var(--border2); border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; transition: all .15s; }
+.btn-outline:hover { border-color: var(--gold); color: var(--gold); }
+.btn-row { display: flex; gap: 8px; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+/* Status */
+.status-bar { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 1.5rem; font-size: 13px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--gold); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-bar.error { border-color: rgba(224,85,85,.3); color: var(--red); background: rgba(224,85,85,.06); }
+
+/* Dashboard */
+.dashboard { display: none; }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
+.card-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.card-value { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
+.card-value.gold { color: var(--gold); }
+.card-value.green { color: var(--green); }
+.card-value.red { color: var(--red); }
+.card-sub { font-size: 12px; color: var(--text3); margin-top: 4px; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 1.5rem; }
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+.chart-card.full { grid-column: 1 / -1; }
+.chart-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
+.chart-wrap { position: relative; height: 260px; }
+.table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 1.5rem; }
+.table-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.table-header h3 { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+table { width: 100%; border-collapse: collapse; }
+th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; background: #161616; border-bottom: 1px solid var(--border); }
+th:not(:first-child) { text-align: center; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border2); font-size: 13px; color: var(--text2); }
+td:first-child { color: var(--text); }
+td:not(:first-child) { text-align: center; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
+.pct-up { color: var(--green); font-weight: 600; }
+.pct-dn { color: var(--red); font-weight: 600; }
+.pct-new { color: var(--green); font-weight: 600; }
+.pct-nil { color: var(--text3); }
+.period-val { color: var(--gold); font-weight: 600; }
+.footer { text-align: center; font-size: 12px; color: var(--text3); margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+/* Backend URL input */
+.api-setup { background: var(--surface); border: 1px solid var(--gold-border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.api-setup h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.api-setup p { font-size: 13px; color: var(--text2); margin-bottom: 12px; line-height: 1.6; }
+.api-row { display: flex; gap: 8px; }
+.api-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 13px; color: var(--text); background: var(--surface2); outline: none; font-family: inherit; }
+.api-row input:focus { border-color: var(--gold); }
+.api-row input::placeholder { color: var(--text3); }
+
+@media print {
+  @page { margin: 1.5cm; size: A4 landscape; }
+  body { background: #fff; color: #111; padding: 0; }
+  .controls, .api-setup, .btn-row, .status-bar, .footer { display: none !important; }
+  .header-divider { background: #ccc; }
+  .header-title, .card-label, .chart-title, .table-header h3, th { color: #555; }
+  .card, .chart-card, .table-card { background: #fff; border-color: #ddd; }
+  .card-value { color: #111; } .card-value.gold { color: #a07020; }
+  td { color: #333; } td:first-child { color: #111; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="https://okutzner.github.io/SFL-Assessment/curtin.png" alt="Curtin University" style="height:32px;width:auto" onerror="this.style.display='none';document.getElementById('logo-fb').style.display='flex'"/>
+  <div id="logo-fb" style="display:none;align-items:center;gap:0">
+    <span style="font-size:20px;font-weight:800;color:#f0f0f0;letter-spacing:-.5px">CURTIN</span>
+    <span style="display:inline-block;width:2px;height:20px;background:#cfa050;margin:0 6px;vertical-align:middle;border-radius:1px"></span>
+    <span style="font-size:10px;font-weight:600;color:#cfa050;letter-spacing:.15em;text-transform:uppercase">SHORT FORM LEARNING</span>
+  </div>
+  <div class="header-divider"></div>
+  <span class="header-title">Monthly Enrolment Report</span>
+</div>
+
+<div class="main">
+  <h1>Monthly Enrolment Report</h1>
+  <p class="subtitle">Enrolment counts per course — new enrolments in period, cumulative totals, and % change vs previous period.</p>
+
+  <!-- Backend URL setup -->
+  <div class="api-setup" id="api-setup">
+    <h2>API connection</h2>
+    <p>Enter the URL of your deployed backend server. This is the Render (or other) URL where your SFL API proxy is running.</p>
+    <div class="api-row">
+      <input type="url" id="api-url" placeholder="https://sfl-enrolment-api.onrender.com" />
+      <button class="btn" onclick="saveApiUrl()">Connect</button>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="controls-grid">
+
+      <div class="ctrl-section">
+        <div class="ctrl-label">Date range</div>
+        <div class="presets">
+          <button class="preset-btn" onclick="setPreset('thismonth',this)">This month</button>
+          <button class="preset-btn active" onclick="setPreset('lastmonth',this)">Last month</button>
+          <button class="preset-btn" onclick="setPreset('last3',this)">Last 3 months</button>
+          <button class="preset-btn" onclick="setPreset('ytd',this)">Year to date</button>
+          <button class="preset-btn" onclick="setPreset('custom',this)">Custom</button>
+        </div>
+        <div class="date-row" id="custom-dates" style="display:none">
+          <div class="date-field"><label>From</label><input type="date" id="date-from"/></div>
+          <div class="date-field"><label>To</label><input type="date" id="date-to"/></div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <div class="ctrl-label">Charts</div>
+        <div class="checkbox-grid">
+          <div class="checkbox-item checked" id="w-trend"><input type="checkbox" id="c-trend" checked onchange="toggleCheck('w-trend',this)"/><label for="c-trend">Trend line</label></div>
+          <div class="checkbox-item checked" id="w-bar"><input type="checkbox" id="c-bar" checked onchange="toggleCheck('w-bar',this)"/><label for="c-bar">Top courses</label></div>
+          <div class="checkbox-item checked" id="w-compare"><input type="checkbox" id="c-compare" checked onchange="toggleCheck('w-compare',this)"/><label for="c-compare">Comparison</label></div>
+          <div class="checkbox-item checked" id="w-table"><input type="checkbox" id="c-table" checked onchange="toggleCheck('w-table',this)"/><label for="c-table">Data table</label></div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <div class="ctrl-label">Columns</div>
+        <div class="checkbox-grid">
+          <div class="checkbox-item checked" id="w-col-period"><input type="checkbox" id="c-col-period" checked onchange="toggleCheck('w-col-period',this)"/><label for="c-col-period">This period</label></div>
+          <div class="checkbox-item checked" id="w-col-prev"><input type="checkbox" id="c-col-prev" checked onchange="toggleCheck('w-col-prev',this)"/><label for="c-col-prev">Previous</label></div>
+          <div class="checkbox-item checked" id="w-col-alltime"><input type="checkbox" id="c-col-alltime" checked onchange="toggleCheck('w-col-alltime',this)"/><label for="c-col-alltime">All time</label></div>
+          <div class="checkbox-item checked" id="w-col-pct"><input type="checkbox" id="c-col-pct" checked onchange="toggleCheck('w-col-pct',this)"/><label for="c-col-pct">% change</label></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="gen-btn" onclick="generate()">Generate report</button>
+      <button class="btn-outline" onclick="window.print()">&#10515; Save as PDF</button>
+      <span style="font-size:12px;color:var(--text3);margin-left:auto" id="last-generated"></span>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status-bar" style="display:none">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text">Loading...</span>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="dashboard" id="dashboard">
+
+    <div class="cards" id="summary-cards"></div>
+
+    <div class="charts" id="charts-wrap">
+      <div class="chart-card full" id="trend-wrap"><div class="chart-title">New enrolments per month</div><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
+      <div class="chart-card" id="bar-wrap"><div class="chart-title">Top 15 courses — this period</div><div class="chart-wrap"><canvas id="barChart"></canvas></div></div>
+      <div class="chart-card" id="compare-wrap"><div class="chart-title">This period vs previous — top 15</div><div class="chart-wrap"><canvas id="compareChart"></canvas></div></div>
+    </div>
+
+    <div class="table-card" id="table-wrap">
+      <div class="table-header">
+        <h3>All courses</h3>
+        <input type="text" id="table-search" placeholder="Search courses..." style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;font-size:12px;color:var(--text);outline:none;width:200px" oninput="filterTable()"/>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="course-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">Curtin University — Short Form Learning &nbsp;&bull;&nbsp; Canvas Enrolment Report</div>
+</div>
+
+<script>
+let API_URL = localStorage.getItem('sfl_api_url') || '';
+let chartInstances = {};
+let allRows = [];
+
+// ── Setup ──
+if(API_URL) {
+  document.getElementById('api-setup').style.display = 'none';
+  document.getElementById('api-url').value = API_URL;
+}
+function saveApiUrl() {
+  API_URL = document.getElementById('api-url').value.trim().replace(/\/$/, '');
+  if(!API_URL) return;
+  localStorage.setItem('sfl_api_url', API_URL);
+  document.getElementById('api-setup').style.display = 'none';
+}
+
+// ── Date presets ──
+function pad(n){ return String(n).padStart(2,'0'); }
+function fmt(d){ return d.toISOString().split('T')[0]; }
+function setPreset(p, el) {
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  let from, to;
+  if(p==='thismonth'){ from=new Date(y,m,1); to=new Date(y,m+1,0); }
+  else if(p==='lastmonth'){ from=new Date(y,m-1,1); to=new Date(y,m,0); }
+  else if(p==='last3'){ from=new Date(y,m-3,1); to=new Date(y,m+1,0); }
+  else if(p==='ytd'){ from=new Date(y,0,1); to=now; }
+  else { document.getElementById('custom-dates').style.display='grid'; return; }
+  document.getElementById('custom-dates').style.display='none';
+  document.getElementById('date-from').value = fmt(from);
+  document.getElementById('date-to').value   = fmt(to);
+}
+// Default to last month
+setPreset('lastmonth', document.querySelectorAll('.preset-btn')[1]);
+
+// ── Checkboxes ──
+function toggleCheck(wrapId, cb) {
+  document.getElementById(wrapId).classList.toggle('checked', cb.checked);
+  if(allRows.length) renderDashboard(allRows[0], allRows[1], allRows[2], allRows[3], allRows[4], allRows[5]);
+}
+function opt(id){ return document.getElementById(id)?.checked ?? true; }
+
+// ── Status ──
+function setStatus(msg, loading, error) {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = 'flex';
+  bar.className = 'status-bar' + (error ? ' error' : '');
+  document.getElementById('spinner').style.display = loading ? 'block' : 'none';
+  document.getElementById('status-text').textContent = msg;
+}
+function hideStatus(){ document.getElementById('status-bar').style.display = 'none'; }
+
+// ── Generate ──
+async function generate() {
+  if(!API_URL){ alert('Please connect to your backend API first.'); document.getElementById('api-setup').style.display='block'; return; }
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
+  if(!from||!to){ alert('Please select a date range.'); return; }
+
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true; btn.textContent = 'Loading...';
+  document.getElementById('dashboard').style.display = 'none';
+  setStatus('Fetching enrolments from Canvas Catalogue...', true);
+
+  try {
+    const fromDt = new Date(from + 'T00:00:00Z');
+    const toDt   = new Date(to   + 'T23:59:59Z');
+    const periodDays = (toDt - fromDt) / 86400000;
+    const prevToDt   = new Date(fromDt - 1000);
+    const prevFromDt = new Date(prevToDt - periodDays * 86400000);
+
+    setStatus('Fetching enrolments...', true);
+    const res = await fetch(`${API_URL}/enrolments`);
+    if(!res.ok) throw new Error(`API error ${res.status}`);
+    const data = await res.json();
+    const enrolments = data.enrollments || [];
+    setStatus(`Processing ${enrolments.length} enrolments...`, true);
+
+    const coursePeriod  = {}, coursePrev = {}, courseAlltime = {};
+    const monthlyTrend  = {};
+
+    for(const enr of enrolments) {
+      const listing = enr.listing || {};
+      const unit = listing.title ? `${listing.title} (${listing.canvas_course_id||'?'})` : '';
+      if(!unit) continue;
+      const enrolled = new Date(enr.enrolled_at||'');
+
+      courseAlltime[unit] = (courseAlltime[unit]||0) + 1;
+
+      if(enr.enrolled_at) {
+        if(enrolled >= fromDt && enrolled <= toDt) {
+          coursePeriod[unit] = (coursePeriod[unit]||0) + 1;
+          const mk = `${enrolled.getFullYear()}-${pad(enrolled.getMonth()+1)}`;
+          monthlyTrend[mk] = (monthlyTrend[mk]||0) + 1;
+        }
+        if(enrolled >= prevFromDt && enrolled <= prevToDt) {
+          coursePrev[unit] = (coursePrev[unit]||0) + 1;
+        }
+      }
+    }
+
+    const allCourses = Object.keys(courseAlltime).sort((a,b) => (coursePeriod[b]||0)-(coursePeriod[a]||0));
+    const totalPeriod  = Object.values(coursePeriod).reduce((a,b)=>a+b,0);
+    const totalPrev    = Object.values(coursePrev).reduce((a,b)=>a+b,0);
+    const totalAlltime = Object.values(courseAlltime).reduce((a,b)=>a+b,0);
+    const activeCount  = allCourses.filter(c=>coursePeriod[c]>0).length;
+    const overallPct   = totalPrev > 0 ? ((totalPeriod-totalPrev)/totalPrev*100).toFixed(1) : null;
+
+    const fromLabel = fromDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+    const toLabel   = toDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+    const periodLabel = `${fromLabel} — ${toLabel}`;
+
+    hideStatus();
+    document.getElementById('last-generated').textContent = `Generated ${new Date().toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
+    renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend,
+                   {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel});
+
+  } catch(e) {
+    setStatus(`Error: ${e.message}`, false, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate report';
+  }
+}
+
+function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta) {
+  allRows = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
+  const {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel} = meta;
+  document.getElementById('dashboard').style.display = 'block';
+
+  // ── Cards ──
+  const pctClass = overallPct === null ? '' : (parseFloat(overallPct) >= 0 ? 'green' : 'red');
+  const pctStr   = overallPct === null ? 'N/A' : `${overallPct >= 0 ? '+' : ''}${overallPct}%`;
+  document.getElementById('summary-cards').innerHTML = `
+    <div class="card"><div class="card-label">Total enrolments</div><div class="card-value gold">${totalPeriod.toLocaleString()}</div><div class="card-sub">in selected period</div></div>
+    <div class="card"><div class="card-label">vs previous period</div><div class="card-value ${pctClass}">${pctStr}</div><div class="card-sub">${totalPrev.toLocaleString()} previous</div></div>
+    <div class="card"><div class="card-label">Active courses</div><div class="card-value">${activeCount}</div><div class="card-sub">with new enrolments</div></div>
+    <div class="card"><div class="card-label">All-time total</div><div class="card-value">${totalAlltime.toLocaleString()}</div><div class="card-sub">cumulative enrolments</div></div>`;
+
+  // ── Charts visibility ──
+  document.getElementById('trend-wrap').style.display   = opt('c-trend')   ? '' : 'none';
+  document.getElementById('bar-wrap').style.display     = opt('c-bar')     ? '' : 'none';
+  document.getElementById('compare-wrap').style.display = opt('c-compare') ? '' : 'none';
+  document.getElementById('table-wrap').style.display   = opt('c-table')   ? '' : 'none';
+
+  const gold = '#cfa050', green = '#4caf82', dim = '#333';
+  Chart.defaults.color = '#666';
+  Chart.defaults.borderColor = '#222';
+
+  // Trend chart
+  if(opt('c-trend')) {
+    const sortedMonths = Object.keys(monthlyTrend).sort();
+    const tLabels = sortedMonths.map(m=>{ const d=new Date(m+'-01'); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); });
+    const tData   = sortedMonths.map(m=>monthlyTrend[m]);
+    if(chartInstances.trend) chartInstances.trend.destroy();
+    chartInstances.trend = new Chart(document.getElementById('trendChart'), {
+      type:'line',
+      data:{ labels:tLabels, datasets:[{ label:'Enrolments', data:tData, borderColor:gold, backgroundColor:'rgba(207,160,80,0.08)', borderWidth:2, pointBackgroundColor:gold, pointRadius:4, fill:true, tension:0.3 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{color:'#1e1e1e'}, ticks:{color:'#666'} }, y:{ grid:{color:'#1e1e1e'}, ticks:{color:'#666'}, beginAtZero:true } } }
+    });
+  }
+
+  const top = allCourses.slice(0,15);
+  const bLabels = top.map(c=>c.split('(')[0].trim().substring(0,40));
+
+  // Bar chart
+  if(opt('c-bar')) {
+    if(chartInstances.bar) chartInstances.bar.destroy();
+    chartInstances.bar = new Chart(document.getElementById('barChart'), {
+      type:'bar',
+      data:{ labels:bLabels, datasets:[{ label:'Enrolments', data:top.map(c=>coursePeriod[c]||0), backgroundColor:'rgba(207,160,80,0.7)', borderColor:gold, borderWidth:1, borderRadius:4 }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ x:{grid:{color:'#1e1e1e'},ticks:{color:'#666'},beginAtZero:true}, y:{grid:{display:false},ticks:{color:'#aaa',font:{size:11}}} } }
+    });
+  }
+
+  // Compare chart
+  if(opt('c-compare')) {
+    if(chartInstances.compare) chartInstances.compare.destroy();
+    chartInstances.compare = new Chart(document.getElementById('compareChart'), {
+      type:'bar',
+      data:{ labels:bLabels, datasets:[
+        { label:'This period', data:top.map(c=>coursePeriod[c]||0), backgroundColor:'rgba(207,160,80,0.7)', borderRadius:3 },
+        { label:'Previous',    data:top.map(c=>coursePrev[c]||0),   backgroundColor:'rgba(255,255,255,0.1)', borderRadius:3 }
+      ]},
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom',labels:{color:'#666',boxWidth:12}} }, scales:{ x:{grid:{color:'#1e1e1e'},ticks:{color:'#666'},beginAtZero:true}, y:{grid:{display:false},ticks:{color:'#aaa',font:{size:11}}} } }
+    });
+  }
+
+  // Table
+  if(opt('c-table')) {
+    const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'), showPct = opt('c-col-pct');
+    let thead = '<tr><th>Course</th>';
+    if(showPeriod) thead += '<th>This period</th>';
+    if(showPrev)   thead += '<th>Previous</th>';
+    if(showAt)     thead += '<th>All time</th>';
+    if(showPct)    thead += '<th>% Change</th>';
+    thead += '</tr>';
+    document.getElementById('table-head').innerHTML = thead;
+
+    window._tableData = allCourses.map(c => {
+      const p = coursePeriod[c]||0, pv = coursePrev[c]||0, at = courseAlltime[c]||0;
+      let pctHtml = '';
+      if(pv>0){ const pct=((p-pv)/pv*100); pctHtml=`<span class="${pct>=0?'pct-up':'pct-dn'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`; }
+      else if(p>0) pctHtml='<span class="pct-new">New</span>';
+      else pctHtml='<span class="pct-nil">—</span>';
+      return {c, p, pv, at, pctHtml};
+    });
+    filterTable();
+  }
+}
+
+function filterTable() {
+  if(!window._tableData) return;
+  const q = (document.getElementById('table-search')?.value||'').toLowerCase();
+  const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'), showPct = opt('c-col-pct');
+  const rows = window._tableData.filter(r=>!q||r.c.toLowerCase().includes(q));
+  document.getElementById('table-body').innerHTML = rows.map(({c,p,pv,at,pctHtml})=>`
+    <tr>
+      <td>${c}</td>
+      ${showPeriod ? `<td class="period-val">${p}</td>` : ''}
+      ${showPrev   ? `<td>${pv}</td>` : ''}
+      ${showAt     ? `<td>${at}</td>` : ''}
+      ${showPct    ? `<td>${pctHtml}</td>` : ''}
+    </tr>`).join('');
+}
+</script>
+</body>
+</html>
