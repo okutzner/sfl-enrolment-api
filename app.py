@@ -7,65 +7,61 @@ import os
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
-CORS(app)  # Allow all origins — security handled by API token on Canvas side
+CORS(app)
 
-# ─────────────────────────────────────────────
-#  CONFIGURATION — set as environment variables on Render
-# ─────────────────────────────────────────────
 CATALOGUE_URL   = os.environ.get("CATALOGUE_URL",   "https://creds.curtin.edu.au")
-CATALOGUE_TOKEN = os.environ.get("CATALOGUE_TOKEN", "")
-ACCOUNT_ID      = os.environ.get("ACCOUNT_ID",      "1")
-# ─────────────────────────────────────────────
-
+CATALOGUE_TOKEN = os.environ.get("CATALOGUE_TOKEN", "d3ca3e2dd2048c80f46898a36c43f46a")
 HEADERS = {"Authorization": f'Token token="{CATALOGUE_TOKEN}"'}
 
 
-def get_all_pages(url):
-    results = []
-    while url:
-        r = requests.get(url, headers=HEADERS, verify=False, timeout=30)
-        if r.status_code == 401:
-            return None, "Invalid API token"
-        if r.status_code == 403:
-            return None, "Insufficient permissions"
-        r.raise_for_status()
-        data = r.json()
-        page = data if isinstance(data, list) else next(
-            (v for v in data.values() if isinstance(v, list)), []
-        )
-        results.extend(page)
-        links = {
-            p.split(";")[1].strip().strip('rel="'): p.split(";")[0].strip().strip("<>")
-            for p in r.headers.get("Link", "").split(",") if ";" in p
-        }
-        url = links.get("next")
-    return results, None
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    return jsonify({"error": str(e)}), 500
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "token_set": bool(CATALOGUE_TOKEN)})
 
 
 @app.route("/enrolments")
 def enrolments():
-    data, err = get_all_pages(f"{CATALOGUE_URL}/api/v1/enrollments?per_page=100")
-    if err:
-        return jsonify({"error": err}), 401
-    return jsonify({"enrollments": data})
+    if not CATALOGUE_TOKEN:
+        return jsonify({"error": "CATALOGUE_TOKEN not set"}), 500
 
+    # Accept optional page param so frontend can fetch in chunks
+    page     = request.args.get("page", 1, type=int)
+    per_page = 100
+    url      = f"{CATALOGUE_URL}/api/v1/enrollments?per_page={per_page}&page={page}"
 
-@app.route("/users/<int:canvas_user_id>")
-def user_profile(canvas_user_id):
-    r = requests.get(
-        f"{CATALOGUE_URL}/api/v1/users?canvas_user_id={canvas_user_id}",
-        headers=HEADERS, verify=False, timeout=30
-    )
-    if r.status_code == 200:
+    try:
+        r = requests.get(url, headers=HEADERS, verify=False, timeout=25)
+        if r.status_code == 401:
+            return jsonify({"error": "Invalid API token"}), 401
+        r.raise_for_status()
         data = r.json()
-        users = data if isinstance(data, list) else data.get("users", [])
-        return jsonify({"user": users[0] if users else {}})
-    return jsonify({"user": {}}), r.status_code
+        page_data = data if isinstance(data, list) else next(
+            (v for v in data.values() if isinstance(v, list)), []
+        )
+        # Check if there's a next page
+        links = {
+            p.split(";")[1].strip().strip('rel="'): p.split(";")[0].strip().strip("<>")
+            for p in r.headers.get("Link", "").split(",") if ";" in p
+        }
+        has_next = "next" in links
+        return jsonify({"enrollments": page_data, "has_next": has_next, "page": page})
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Request to Canvas timed out"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
