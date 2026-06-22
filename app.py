@@ -17,7 +17,7 @@ CORS(app)
 # ─────────────────────────────────────────────
 CATALOGUE_URL   = os.environ.get("CATALOGUE_URL",   "https://creds.curtin.edu.au")
 CATALOGUE_TOKEN = os.environ.get("CATALOGUE_TOKEN", "d3ca3e2dd2048c80f46898a36c43f46a")
-ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "SFL2026!")  # Set this in Render
+ACCESS_PASSWORD = os.environ.get("ACCESS_PASSWORD", "")  # Set this in Render
 # ─────────────────────────────────────────────
 
 HEADERS = {"Authorization": f'Token token="{CATALOGUE_TOKEN}"'}
