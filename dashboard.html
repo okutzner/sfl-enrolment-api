@@ -283,7 +283,7 @@ function hideStatus(){ document.getElementById('status-bar').style.display = 'no
 
 // ── Generate ──
 async function generate() {
-  if(!API_URL){ alert('Please connect to your backend API first.'); document.getElementById('api-setup').style.display='block'; return; }
+  // API_URL is same-origin for web app version
   const from = document.getElementById('date-from').value;
   const to   = document.getElementById('date-to').value;
   if(from && to && new Date(from) > new Date(to)){ alert('From date must be before To date.'); return; }
