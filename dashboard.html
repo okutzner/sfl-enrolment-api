@@ -343,10 +343,11 @@ async function generate() {
     }
 
     const allCourses = Object.keys(courseAlltime).sort((a,b) => (coursePeriod[b]||0)-(coursePeriod[a]||0));
+    // All metrics calculated from allCourses (already filtered before renderDashboard is called)
     const totalPeriod  = allCourses.reduce((a,c)=>(a+(coursePeriod[c]||0)),0);
-    const totalPrev    = Object.values(coursePrev).reduce((a,b)=>a+b,0);
-    const totalAlltime = Object.values(courseAlltime).reduce((a,b)=>a+b,0);
-    const activeCount  = allCourses.filter(c=>coursePeriod[c]>0).length;
+    const totalPrev    = allCourses.reduce((a,c)=>(a+(coursePrev[c]||0)),0);
+    const totalAlltime = allCourses.reduce((a,c)=>(a+(courseAlltime[c]||0)),0);
+    const activeCount  = allCourses.filter(c=>(coursePeriod[c]||0)>0).length;
     const overallPct   = totalPrev > 0 ? ((totalPeriod-totalPrev)/totalPrev*100).toFixed(1) : null;
 
     const fromLabel   = fromDt ? fromDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : null;
