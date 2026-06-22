@@ -311,6 +311,7 @@ async function generate() {
       }
       const data = await res.json();
       enrolments = enrolments.concat(data.enrollments || []);
+      window._rawEnrolments = enrolments; // Store for filtered trend chart
       hasNext = data.has_next || false;
       page++;
       if(page > 500) break;
@@ -403,8 +404,14 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   const {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel} = meta;
   document.getElementById('dashboard').style.display = 'block';
   window._allCourses = allCourses;
-  window._lastRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
-  populateCourseDropdown(allCourses);
+  // Only store as lastRenderArgs if this is NOT a filtered render
+  // _originalRenderArgs always holds the full unfiltered dataset
+  const q = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
+  if(!q) {
+    window._lastRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
+    window._originalRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
+    populateCourseDropdown(allCourses);
+  }
 
   // ── Cards ──
   const pctClass = overallPct === null ? '' : (parseFloat(overallPct) >= 0 ? 'green' : 'red');
@@ -427,9 +434,24 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
 
   // Trend chart
   if(opt('c-trend')) {
-    const sortedMonths = Object.keys(monthlyTrend).sort();
+    // Recalculate trend from raw enrolments filtered to visible courses
+    const trendByMonth = {};
+    if(window._rawEnrolments) {
+      for(const enr of window._rawEnrolments) {
+        const listing = enr.listing || {};
+        const unit = listing.title ? listing.title+' ('+listing.canvas_course_id+')' : '';
+        if(!unit || !allCourses.includes(unit)) continue;
+        const dt = enr.enrolled_at ? new Date(enr.enrolled_at.replace('Z','')) : null;
+        if(!dt) continue;
+        const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+        trendByMonth[mk] = (trendByMonth[mk]||0) + 1;
+      }
+    } else {
+      Object.assign(trendByMonth, monthlyTrend);
+    }
+    const sortedMonths = Object.keys(trendByMonth).sort();
     const tLabels = sortedMonths.map(m=>{ const d=new Date(m+'-01'); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); });
-    const tData   = sortedMonths.map(m=>monthlyTrend[m]);
+    const tData   = sortedMonths.map(m=>trendByMonth[m]||0);
     if(chartInstances.trend) chartInstances.trend.destroy();
     // Store trend data globally for MA toggle
     window._lastTrendData = tData;
@@ -550,8 +572,8 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
 }
 
 function updateCourseFilter() {
-  if(!window._lastRenderArgs) return;
-  const [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta] = window._lastRenderArgs;
+  if(!window._originalRenderArgs) return;
+  const [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta] = window._originalRenderArgs;
   const q = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
   // Filter courses by partial search term
   const filtered = q ? allCourses.filter(c => c.toLowerCase().includes(q)) : allCourses;
