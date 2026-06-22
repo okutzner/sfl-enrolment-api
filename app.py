@@ -49,9 +49,12 @@ button:hover{background:#d9aa60}
 <body>
 <div class="card">
   <div class="header">
-    <span style="font-size:18px;font-weight:800;color:#f0f0f0;letter-spacing:-.5px">CURTIN</span>
-    <span style="display:inline-block;width:2px;height:18px;background:#cfa050;margin:0 6px;vertical-align:middle;border-radius:1px"></span>
-    <span style="font-size:10px;font-weight:600;color:#cfa050;letter-spacing:.12em;text-transform:uppercase">SHORT FORM LEARNING</span>
+    <img src="/logo" alt="Curtin" style="height:28px;width:auto" onerror="this.style.display='none';document.getElementById('logo-fb').style.display='flex'"/>
+    <div id="logo-fb" style="display:none;align-items:center;gap:0">
+      <span style="font-size:18px;font-weight:800;color:#f0f0f0;letter-spacing:-.5px">CURTIN</span>
+      <span style="display:inline-block;width:2px;height:18px;background:#cfa050;margin:0 6px;vertical-align:middle;border-radius:1px"></span>
+      <span style="font-size:10px;font-weight:600;color:#cfa050;letter-spacing:.12em;text-transform:uppercase">SHORT FORM LEARNING</span>
+    </div>
     <div class="header-divider"></div>
     <span class="header-title">Enrolment Report</span>
   </div>
@@ -139,6 +142,20 @@ def dashboard():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "token_set": bool(CATALOGUE_TOKEN), "auth": check_auth()})
+
+
+@app.route("/logo")
+def logo():
+    import mimetypes
+    for fname in ["curtin.png", "curtin.jpg", "curtin.svg", "logo.png"]:
+        path = os.path.join(os.path.dirname(__file__), fname)
+        if os.path.exists(path):
+            mime = mimetypes.guess_type(path)[0] or "image/png"
+            with open(path, "rb") as f:
+                data = f.read()
+            from flask import Response
+            return Response(data, mimetype=mime)
+    return "", 404
 
 
 @app.route("/enrolments")
