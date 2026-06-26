@@ -1,5 +1,7 @@
 from flask import Flask, jsonify, request, session, redirect, url_for, render_template_string
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import requests
 import urllib3
 import os
@@ -10,7 +12,21 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-CORS(app)
+
+# ── CORS — locked to Render domain only ──────
+RENDER_URL = os.environ.get("RENDER_URL", "")
+allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
+if RENDER_URL:
+    allowed_origins.append(RENDER_URL)
+CORS(app, origins=allowed_origins, supports_credentials=True)
+
+# ── Rate limiting ─────────────────────────────
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://"
+)
 
 # ─────────────────────────────────────────────
 #  CONFIGURATION — set as environment variables on Render
@@ -60,7 +76,9 @@ button:hover{background:#d9aa60}
   </div>
   <h1>Sign in</h1>
   <p class="subtitle">Enter the access password to view the SFL Monthly Enrolment Report.</p>
-  {% if error %}
+  {% if rate_limited %}
+  <div class="error" style="border-color:rgba(207,160,80,.3);background:rgba(207,160,80,.08);color:#cfa050">Too many attempts. Please wait a minute before trying again.</div>
+  {% elif error %}
   <div class="error">Incorrect password. Please try again.</div>
   {% endif %}
   <form method="POST" action="/login">
@@ -95,6 +113,13 @@ def handle_error(e):
     return jsonify({"error": str(e)}), 500
 
 
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+    if request.path == "/login":
+        return render_template_string(LOGIN_PAGE, error=True, rate_limited=True), 429
+    return jsonify({"error": "Too many requests. Please wait before trying again."}), 429
+
+
 # ── Auth routes ──────────────────────────────
 
 @app.route("/")
@@ -106,6 +131,7 @@ def index():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 20 per hour", methods=["POST"])
 def login():
     error = False
     if request.method == "POST":
@@ -116,7 +142,7 @@ def login():
             return redirect(url_for("dashboard"))
         else:
             error = True
-    return render_template_string(LOGIN_PAGE, error=error)
+    return render_template_string(LOGIN_PAGE, error=error, rate_limited=False)
 
 
 @app.route("/logout")
