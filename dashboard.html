@@ -59,7 +59,7 @@ h1 { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -.02
 
 /* Dashboard */
 .dashboard { display: none; }
-.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
 .card-label { font-size: 11px; font-weight: 600; color: #d0d0d0; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .card-value { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
@@ -98,6 +98,24 @@ tr:hover td { background: var(--surface2); }
 .api-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 13px; color: var(--text); background: var(--surface2); outline: none; font-family: inherit; }
 .api-row input:focus { border-color: var(--gold); }
 .api-row input::placeholder { color: var(--text3); }
+
+/* Month breakdown modal */
+.bd-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; padding:1.5rem; }
+.bd-modal { background:var(--surface); border:1px solid var(--border2); border-radius:12px; width:100%; max-width:520px; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+.bd-header { padding:1.25rem 1.5rem; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.bd-header h3 { font-size:16px; font-weight:700; color:var(--text); }
+.bd-sub { font-size:12px; color:var(--text3); margin-top:4px; }
+.bd-close { background:transparent; border:1px solid var(--border2); color:var(--text3); width:26px; height:26px; border-radius:6px; cursor:pointer; font-size:14px; line-height:1; flex-shrink:0; }
+.bd-close:hover { border-color:var(--gold); color:var(--gold); }
+.bd-body { padding:1rem 1.5rem 1.5rem; overflow-y:auto; }
+.bd-row { display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border2); position:relative; }
+.bd-row:last-child { border-bottom:none; }
+.bd-bar-wrap { position:absolute; left:0; bottom:0; height:2px; width:100%; background:transparent; }
+.bd-bar { height:2px; background:var(--gold-border); }
+.bd-name { font-size:13px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; }
+.bd-count { font-size:13px; font-weight:700; color:var(--gold); text-align:right; min-width:36px; }
+.bd-rev { font-size:12px; color:var(--text2); text-align:right; min-width:64px; }
+.bd-pct { font-size:11px; color:var(--text3); text-align:right; min-width:42px; }
 
 @media print {
   @page { margin: 1.5cm; size: A4 landscape; }
@@ -168,6 +186,7 @@ tr:hover td { background: var(--surface2); }
           <div class="checkbox-item checked" id="w-col-prev"><input type="checkbox" id="c-col-prev" checked onchange="toggleCheck('w-col-prev',this)"/><label for="c-col-prev">Previous</label></div>
           <div class="checkbox-item checked" id="w-col-alltime"><input type="checkbox" id="c-col-alltime" checked onchange="toggleCheck('w-col-alltime',this)"/><label for="c-col-alltime">All time</label></div>
           <div class="checkbox-item checked" id="w-col-pct"><input type="checkbox" id="c-col-pct" checked onchange="toggleCheck('w-col-pct',this)"/><label for="c-col-pct">% change</label></div>
+          <div class="checkbox-item checked" id="w-col-revenue"><input type="checkbox" id="c-col-revenue" checked onchange="toggleCheck('w-col-revenue',this)"/><label for="c-col-revenue">Revenue (est.)</label></div>
         </div>
       </div>
 
@@ -200,11 +219,15 @@ tr:hover td { background: var(--surface2); }
   <div class="dashboard" id="dashboard">
 
     <div class="cards" id="summary-cards"></div>
+    <div id="revenue-caveat" style="font-size:11px;color:var(--text3);margin:-0.75rem 0 1.5rem">Revenue is estimated as Catalogue list price &times; Canvas enrolment count — it excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.</div>
 
     <div class="charts" id="charts-wrap">
       <div class="chart-card full" id="trend-wrap">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div class="chart-title" style="margin:0">New enrolments per month</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div class="chart-title" style="margin:0">New enrolments per month</div>
+            <span style="font-size:11px;color:var(--text3)">click a point for the course breakdown</span>
+          </div>
           <div style="display:flex;gap:4px">
             <button id="ma-btn-3" onclick="setMA(3)" style="padding:4px 10px;font-size:11px;font-weight:600;border-radius:99px;border:1px solid #4caf82;background:rgba(76,175,130,0.15);color:#4caf82;cursor:pointer;font-family:inherit;transition:all .15s">3-month avg</button>
             <button id="ma-btn-12" onclick="setMA(12)" style="padding:4px 10px;font-size:11px;font-weight:600;border-radius:99px;border:1px solid var(--border2);background:transparent;color:#888;cursor:pointer;font-family:inherit;transition:all .15s">12-month avg</button>
@@ -318,13 +341,41 @@ async function generate() {
     }
     setStatus(`Processing ${enrolments.length} enrolments...`, true);
 
+    // Fetch Catalogue price data (list price per course) — used to estimate revenue
+    const priceById = {};
+    let priceFetchFailed = false;
+    try {
+      let cPage = 1, cHasNext = true, cCount = 0;
+      while(cHasNext) {
+        setStatus(`Fetching course prices... (page ${cPage})`, true);
+        const cRes = await fetch(`${API_URL}/courses?page=${cPage}`);
+        if(!cRes.ok) { priceFetchFailed = true; break; }
+        const cData = await cRes.json();
+        for(const c of (cData.courses || [])) {
+          priceById[c.id] = { fee: Number(c.enrollment_fee) || 0, currency: c.currency || 'AUD' };
+        }
+        cHasNext = cData.has_next || false;
+        cPage++;
+        cCount++;
+        if(cCount > 500) break;
+      }
+    } catch(e) {
+      priceFetchFailed = true;
+    }
+    window._priceById = priceById;
+    window._priceFetchFailed = priceFetchFailed;
+
     const coursePeriod  = {}, coursePrev = {}, courseAlltime = {};
     const monthlyTrend  = {};
+    const unitListingId = {}; // unit -> Catalogue listing id, for price lookup
+    const unitByCanvasId = {}; // canvas_course_id -> unit, for joining orders/revenue data
 
     for(const enr of enrolments) {
       const listing = enr.listing || {};
       const unit = listing.title ? `${listing.title} (${listing.canvas_course_id||'?'})` : '';
       if(!unit) continue;
+      if(unitListingId[unit] === undefined) unitListingId[unit] = listing.id;
+      if(listing.canvas_course_id !== undefined) unitByCanvasId[listing.canvas_course_id] = unit;
       const enrolledStr = (enr.enrolled_at||'').replace('Z','');
       const enrolled = new Date(enrolledStr);
 
@@ -342,6 +393,12 @@ async function generate() {
         }
       }
     }
+    window._unitListingId = unitListingId;
+    window._unitByCanvasId = unitByCanvasId;
+
+    // Price for a course unit — 0 (unknown) if we couldn't fetch or match it
+    const priceOf = (unit) => priceById[unitListingId[unit]]?.fee || 0;
+    window._priceOf = priceOf;
 
     const allCourses = Object.keys(courseAlltime).sort((a,b) => (coursePeriod[b]||0)-(coursePeriod[a]||0));
     // All metrics calculated from allCourses (already filtered before renderDashboard is called)
@@ -351,6 +408,93 @@ async function generate() {
     const activeCount  = allCourses.filter(c=>(coursePeriod[c]||0)>0).length;
     const overallPct   = totalPrev > 0 ? ((totalPeriod-totalPrev)/totalPrev*100).toFixed(1) : null;
 
+    // Fetch real revenue (Catalogue analytics/orders) — reflects actual amounts paid,
+    // including discounts and promo codes. Bucketed by purchase date.
+    const rawOrders = [];
+    let ordersFetchFailed = false;
+    try {
+      let oPage = 1, oHasNext = true, oCount = 0;
+      while(oHasNext) {
+        setStatus(`Fetching order revenue... (page ${oPage})`, true);
+        const oRes = await fetch(`${API_URL}/orders?page=${oPage}`);
+        if(!oRes.ok) { ordersFetchFailed = true; break; }
+        const oData = await oRes.json();
+        rawOrders.push(...(oData.orders || []));
+        oHasNext = oData.has_next || false;
+        oPage++;
+        oCount++;
+        if(oCount > 500) break;
+      }
+    } catch(e) {
+      ordersFetchFailed = true;
+    }
+    window._rawOrders = rawOrders;
+    window._ordersFetchFailed = ordersFetchFailed;
+
+    const courseRevenuePeriod = {}, courseRevenuePrev = {}, courseRevenueAlltime = {};
+    const monthlyRevenueTrend = {};
+    const orderCurrencyCounts = {};
+    let unattributedPeriod = 0, unattributedPrev = 0, unattributedAlltime = 0;
+
+    // usingEstimate: false = real orders data used, true = fell back to price×count, null = no revenue data at all
+    let usingEstimate = null;
+
+    if(!ordersFetchFailed) {
+      usingEstimate = false;
+      for(const o of rawOrders) {
+        if(!o.purchased_at) continue;
+        const purchased = new Date(o.purchased_at.replace('Z',''));
+        const rev = Number(o.revenue) || 0;
+        orderCurrencyCounts[o.currency||'AUD'] = (orderCurrencyCounts[o.currency||'AUD']||0) + 1;
+        const unit = unitByCanvasId[o.canvas_course_id];
+
+        if(unit) courseRevenueAlltime[unit] = (courseRevenueAlltime[unit]||0) + rev;
+        else unattributedAlltime += rev;
+
+        const inPeriod = !fromDt || (purchased >= fromDt && (!toDt || purchased <= toDt));
+        if(inPeriod) {
+          if(unit) courseRevenuePeriod[unit] = (courseRevenuePeriod[unit]||0) + rev;
+          else unattributedPeriod += rev;
+          const mk = `${purchased.getFullYear()}-${pad(purchased.getMonth()+1)}`;
+          monthlyRevenueTrend[mk] = (monthlyRevenueTrend[mk]||0) + rev;
+        }
+        if(prevFromDt && prevToDt && purchased >= prevFromDt && purchased <= prevToDt) {
+          if(unit) courseRevenuePrev[unit] = (courseRevenuePrev[unit]||0) + rev;
+          else unattributedPrev += rev;
+        }
+      }
+    } else if(!priceFetchFailed) {
+      // Fall back to estimate: list price × enrolment count
+      usingEstimate = true;
+      for(const c of allCourses) {
+        courseRevenuePeriod[c]  = priceOf(c) * (coursePeriod[c]||0);
+        courseRevenuePrev[c]    = priceOf(c) * (coursePrev[c]||0);
+        courseRevenueAlltime[c] = priceOf(c) * (courseAlltime[c]||0);
+      }
+    }
+
+    window._courseRevenuePeriod  = courseRevenuePeriod;
+    window._courseRevenuePrev    = courseRevenuePrev;
+    window._courseRevenueAlltime = courseRevenueAlltime;
+    window._monthlyRevenueTrend  = monthlyRevenueTrend;
+    window._usingEstimateRevenue = usingEstimate;
+
+    const revenuePeriod  = allCourses.reduce((a,c)=>(a+(courseRevenuePeriod[c]||0)),0)  + unattributedPeriod;
+    const revenuePrev    = allCourses.reduce((a,c)=>(a+(courseRevenuePrev[c]||0)),0)    + unattributedPrev;
+    const revenueAlltime = allCourses.reduce((a,c)=>(a+(courseRevenueAlltime[c]||0)),0) + unattributedAlltime;
+    const revenuePct     = revenuePrev > 0 ? ((revenuePeriod-revenuePrev)/revenuePrev*100).toFixed(1) : null;
+
+    // Currency: prefer orders' currency, fall back to Catalogue course currency, default AUD
+    let currency = 'AUD';
+    if(Object.keys(orderCurrencyCounts).length) {
+      currency = Object.keys(orderCurrencyCounts).sort((a,b)=>orderCurrencyCounts[b]-orderCurrencyCounts[a])[0];
+    } else {
+      const priceCurrencyCounts = {};
+      Object.values(priceById).forEach(p => { priceCurrencyCounts[p.currency] = (priceCurrencyCounts[p.currency]||0)+1; });
+      currency = Object.keys(priceCurrencyCounts).sort((a,b)=>priceCurrencyCounts[b]-priceCurrencyCounts[a])[0] || 'AUD';
+    }
+    window._revenueCurrency = currency;
+
     const fromLabel   = fromDt ? fromDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : null;
     const toLabel     = toDt   ? toDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})   : null;
     const periodLabel = fromLabel && toLabel ? fromLabel+' — '+toLabel : fromLabel ? 'From '+fromLabel : 'All time';
@@ -358,7 +502,9 @@ async function generate() {
     hideStatus();
     document.getElementById('last-generated').textContent = `Generated ${new Date().toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
     renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend,
-                   {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel});
+                   {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
+                    revenuePeriod, revenuePrev, revenueAlltime, revenuePct, currency, usingEstimate,
+                    courseRevenuePeriod, courseRevenuePrev, courseRevenueAlltime});
 
   } catch(e) {
     setStatus(`Error: ${e.message}`, false, true);
@@ -399,9 +545,95 @@ function setMA(n) {
   }
 }
 
+// ── Month breakdown modal ──
+function showMonthBreakdown(index) {
+  const monthKey   = window._lastTrendMonths?.[index];
+  const monthLabel = window._lastTrendLabels?.[index] || 'this month';
+  if(!monthKey) return;
+
+  const courses        = window._allCourses || [];
+  const rawEnr          = window._rawEnrolments || [];
+  const rawOrders        = window._rawOrders || [];
+  const priceById       = window._priceById || {};
+  const unitByCanvasId  = window._unitByCanvasId || {};
+  const usingEstimate   = window._usingEstimateRevenue; // false = real orders, true = estimate, null = unavailable
+  const currency         = window._revenueCurrency || 'AUD';
+  const money = (n) => {
+    try { return n.toLocaleString('en-AU', {style:'currency', currency, maximumFractionDigits:0}); }
+    catch(e) { return currency + ' ' + Math.round(n).toLocaleString(); }
+  };
+
+  const byCourse = {}; // unit -> { count, revenue, fee }
+  let total = 0;
+
+  for(const enr of rawEnr) {
+    const listing = enr.listing || {};
+    const unit = listing.title ? listing.title+' ('+listing.canvas_course_id+')' : '';
+    if(!unit || !courses.includes(unit)) continue;
+    if(!enr.enrolled_at) continue;
+    const dt = new Date(enr.enrolled_at.replace('Z',''));
+    const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+    if(mk !== monthKey) continue;
+    if(!byCourse[unit]) byCourse[unit] = { count: 0, revenue: 0, fee: priceById[listing.id]?.fee || 0 };
+    byCourse[unit].count++;
+    total++;
+  }
+
+  if(usingEstimate === false) {
+    // Real revenue: sum orders whose purchase date falls in this month, joined by canvas_course_id
+    for(const o of rawOrders) {
+      if(!o.purchased_at) continue;
+      const dt = new Date(o.purchased_at.replace('Z',''));
+      const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+      if(mk !== monthKey) continue;
+      const unit = unitByCanvasId[o.canvas_course_id];
+      if(!unit || !courses.includes(unit)) continue; // unattributed orders aren't shown per-course here
+      if(!byCourse[unit]) byCourse[unit] = { count: 0, revenue: 0, fee: 0 };
+      byCourse[unit].revenue += Number(o.revenue) || 0;
+    }
+  } else if(usingEstimate === true) {
+    Object.values(byCourse).forEach(v => { v.revenue = v.fee * v.count; });
+  }
+  const showRevCol = usingEstimate !== null;
+  const totalRevenue = showRevCol ? Object.values(byCourse).reduce((a,v)=>a+v.revenue,0) : 0;
+
+  const rows = Object.entries(byCourse).sort((a,b) => b[1].count-a[1].count);
+  const maxCount = rows.length ? rows[0][1].count : 0;
+
+  const rowsHtml = rows.map(([name, {count, revenue}]) => {
+    const pct    = total ? (count/total*100).toFixed(1) : '0.0';
+    const barPct = maxCount ? (count/maxCount*100) : 0;
+    const short  = name.split('(')[0].trim();
+    const esc    = name.replace(/"/g,'&quot;');
+    const revCell = showRevCol ? `<div class="bd-rev">${money(revenue)}</div>` : '';
+    return `<div class="bd-row" style="grid-template-columns:1fr auto ${showRevCol?'auto':''} auto">
+      <div class="bd-bar-wrap"><div class="bd-bar" style="width:${barPct}%"></div></div>
+      <div class="bd-name" title="${esc}">${short}</div>
+      <div class="bd-count">${count}</div>
+      ${revCell}
+      <div class="bd-pct">${pct}%</div>
+    </div>`;
+  }).join('');
+
+  const revWord = usingEstimate ? 'estimated revenue' : 'revenue';
+  document.getElementById('bd-title').textContent = `Enrolments — ${monthLabel}`;
+  document.getElementById('bd-total').textContent = showRevCol
+    ? `${total.toLocaleString()} enrolment${total===1?'':'s'} · ${money(totalRevenue)} ${revWord} · ${rows.length} course${rows.length===1?'':'s'}`
+    : `${total.toLocaleString()} total enrolment${total===1?'':'s'} across ${rows.length} course${rows.length===1?'':'s'}`;
+  document.getElementById('bd-rows').innerHTML = rowsHtml ||
+    '<div style="color:var(--text3);font-size:13px;padding:12px 0">No enrolments found for this month.</div>';
+  document.getElementById('bd-overlay').style.display = 'flex';
+}
+
+function closeBreakdown() {
+  document.getElementById('bd-overlay').style.display = 'none';
+}
+
 function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta) {
   allRows = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
-  const {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel} = meta;
+  const {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
+         revenuePeriod=0, revenuePrev=0, revenueAlltime=0, revenuePct=null, currency='AUD',
+         usingEstimate=null, courseRevenuePeriod={}} = meta;
   document.getElementById('dashboard').style.display = 'block';
   window._allCourses = allCourses;
   // Only store as lastRenderArgs if this is NOT a filtered render
@@ -416,11 +648,35 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   // ── Cards ──
   const pctClass = overallPct === null ? '' : (parseFloat(overallPct) >= 0 ? 'green' : 'red');
   const pctStr   = overallPct === null ? 'N/A' : `${overallPct >= 0 ? '+' : ''}${overallPct}%`;
+  const money = (n) => {
+    try { return n.toLocaleString('en-AU', {style:'currency', currency, maximumFractionDigits:0}); }
+    catch(e) { return currency + ' ' + Math.round(n).toLocaleString(); }
+  };
+  const revPctClass = revenuePct === null ? '' : (parseFloat(revenuePct) >= 0 ? 'green' : 'red');
+  const revPctStr    = revenuePct === null ? '' : ` (${revenuePct >= 0 ? '+' : ''}${revenuePct}% vs previous)`;
+  const revLabel     = usingEstimate ? 'Estimated revenue' : 'Revenue';
+  const allTimeSub   = usingEstimate ? 'cumulative — list price &times; enrolments' : 'cumulative — actual amount paid';
+  const revenueCardsHtml = usingEstimate === null
+    ? `<div class="card"><div class="card-label">Revenue</div><div class="card-value" style="color:var(--text3)">N/A</div><div class="card-sub">Couldn't fetch Catalogue price or order data</div></div>`
+    : `<div class="card"><div class="card-label">${revLabel}</div><div class="card-value gold">${money(revenuePeriod)}</div><div class="card-sub ${revPctClass}">in selected period${revPctStr}</div></div>
+       <div class="card"><div class="card-label">All-time ${revLabel.toLowerCase()}</div><div class="card-value">${money(revenueAlltime)}</div><div class="card-sub">${allTimeSub}</div></div>`;
   document.getElementById('summary-cards').innerHTML = `
     <div class="card"><div class="card-label">Total enrolments</div><div class="card-value gold">${totalPeriod.toLocaleString()}</div><div class="card-sub">in selected period</div></div>
     <div class="card"><div class="card-label">vs previous period</div><div class="card-value ${pctClass}">${pctStr}</div><div class="card-sub">${totalPrev.toLocaleString()} previous</div></div>
     <div class="card"><div class="card-label">Active courses</div><div class="card-value">${activeCount}</div><div class="card-sub">with new enrolments</div></div>
-    <div class="card"><div class="card-label">All-time total</div><div class="card-value">${totalAlltime.toLocaleString()}</div><div class="card-sub">cumulative enrolments</div></div>`;
+    <div class="card"><div class="card-label">All-time total</div><div class="card-value">${totalAlltime.toLocaleString()}</div><div class="card-sub">cumulative enrolments</div></div>
+    ${revenueCardsHtml}`;
+  const caveatEl = document.getElementById('revenue-caveat');
+  if(usingEstimate === null) {
+    caveatEl.style.display = 'none';
+  } else if(usingEstimate) {
+    caveatEl.style.display = '';
+    caveatEl.textContent = "Catalogue's order/analytics data wasn't available, so revenue is estimated as list price × enrolment count — this excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.";
+  } else {
+    caveatEl.style.display = '';
+    caveatEl.textContent = "Revenue reflects the actual amount paid per Catalogue's order records, including discounts and promo codes. It's grouped by purchase date, which can differ slightly from enrolment date for bulk purchases.";
+  }
+
 
   // ── Charts visibility ──
   document.getElementById('trend-wrap').style.display   = opt('c-trend')   ? '' : 'none';
@@ -452,6 +708,9 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
     const sortedMonths = Object.keys(trendByMonth).sort();
     const tLabels = sortedMonths.map(m=>{ const d=new Date(m+'-01'); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); });
     const tData   = sortedMonths.map(m=>trendByMonth[m]||0);
+    // Store for the click-to-breakdown handler
+    window._lastTrendMonths = sortedMonths;
+    window._lastTrendLabels = tLabels;
     if(chartInstances.trend) chartInstances.trend.destroy();
     // Store trend data globally for MA toggle
     window._lastTrendData = tData;
@@ -498,6 +757,14 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
       options:{
         responsive:true,
         maintainAspectRatio:false,
+        onHover:(evt, elements) => {
+          const onTotalDot = elements.some(el => el.datasetIndex === 0);
+          evt.native.target.style.cursor = onTotalDot ? 'pointer' : 'default';
+        },
+        onClick:(evt, elements) => {
+          const hit = elements.find(el => el.datasetIndex === 0);
+          if(hit) showMonthBreakdown(hit.index);
+        },
         plugins:{
           legend:{
             display:hasEnoughData,
@@ -550,22 +817,26 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
 
   // Table
   if(opt('c-table')) {
-    const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'), showPct = opt('c-col-pct');
+    const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'),
+          showPct = opt('c-col-pct'), showRev = opt('c-col-revenue') && usingEstimate !== null;
+    const revColLabel = usingEstimate ? 'Revenue (est.)' : 'Revenue';
     let thead = '<tr><th>Course</th>';
     if(showPeriod) thead += '<th>This period</th>';
     if(showPrev)   thead += '<th>Previous</th>';
     if(showAt)     thead += '<th>All time</th>';
     if(showPct)    thead += '<th>% Change</th>';
+    if(showRev)    thead += `<th>${revColLabel}</th>`;
     thead += '</tr>';
     document.getElementById('table-head').innerHTML = thead;
 
     window._tableData = allCourses.map(c => {
       const p = coursePeriod[c]||0, pv = coursePrev[c]||0, at = courseAlltime[c]||0;
+      const rev = money(courseRevenuePeriod[c] || 0);
       let pctHtml = '';
       if(pv>0){ const pct=((p-pv)/pv*100); pctHtml=`<span class="${pct>=0?'pct-up':'pct-dn'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`; }
       else if(p>0) pctHtml='<span class="pct-new">New</span>';
       else pctHtml='<span class="pct-nil">—</span>';
-      return {c, p, pv, at, pctHtml};
+      return {c, p, pv, at, pctHtml, rev};
     });
     filterTable();
   }
@@ -578,6 +849,10 @@ function updateCourseFilter() {
   // Filter courses by partial search term
   const filtered = q ? allCourses.filter(c => c.toLowerCase().includes(q)) : allCourses;
 
+  const cRevPeriod  = meta.courseRevenuePeriod  || {};
+  const cRevPrev    = meta.courseRevenuePrev    || {};
+  const cRevAlltime = meta.courseRevenueAlltime || {};
+
   // Recalculate meta for filtered courses
   const filteredMeta = {
     ...meta,
@@ -586,11 +861,18 @@ function updateCourseFilter() {
     totalAlltime: filtered.reduce((a,c) => a+(courseAlltime[c]||0), 0),
     activeCount:  filtered.filter(c => (coursePeriod[c]||0) > 0).length,
     overallPct:   null,
+    revenuePeriod:  filtered.reduce((a,c) => a+(cRevPeriod[c]||0), 0),
+    revenuePrev:    filtered.reduce((a,c) => a+(cRevPrev[c]||0), 0),
+    revenueAlltime: filtered.reduce((a,c) => a+(cRevAlltime[c]||0), 0),
+    revenuePct:   null,
     periodLabel:  meta.periodLabel + (q ? ' (filtered: "'+q+'")' : ''),
   };
   // Recalculate % change for filtered
   if(filteredMeta.totalPrev > 0) {
     filteredMeta.overallPct = ((filteredMeta.totalPeriod - filteredMeta.totalPrev) / filteredMeta.totalPrev * 100).toFixed(1);
+  }
+  if(filteredMeta.revenuePrev > 0) {
+    filteredMeta.revenuePct = ((filteredMeta.revenuePeriod - filteredMeta.revenuePrev) / filteredMeta.revenuePrev * 100).toFixed(1);
   }
 
   // Re-render with filtered courses and recalculated meta
@@ -618,22 +900,37 @@ function clearCourseFilter() {
 function filterTable() {
   if(!window._tableData) return;
   const q = (document.getElementById('table-search')?.value||'').toLowerCase();
-  const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'), showPct = opt('c-col-pct');
+  const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'),
+        showPct = opt('c-col-pct'), showRev = opt('c-col-revenue') && window._usingEstimateRevenue !== null;
   const courseSearch = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
   const rows = window._tableData.filter(r=>{
     if(q && !r.c.toLowerCase().includes(q)) return false;
     if(courseSearch && !r.c.toLowerCase().includes(courseSearch)) return false;
     return true;
   });
-  document.getElementById('table-body').innerHTML = rows.map(({c,p,pv,at,pctHtml})=>`
+  document.getElementById('table-body').innerHTML = rows.map(({c,p,pv,at,pctHtml,rev})=>`
     <tr>
       <td>${c}</td>
       ${showPeriod ? `<td class="period-val">${p}</td>` : ''}
       ${showPrev   ? `<td>${pv}</td>` : ''}
       ${showAt     ? `<td>${at}</td>` : ''}
       ${showPct    ? `<td>${pctHtml}</td>` : ''}
+      ${showRev    ? `<td>${rev}</td>` : ''}
     </tr>`).join('');
 }
 </script>
+<div class="bd-overlay" id="bd-overlay" onclick="if(event.target===this) closeBreakdown()">
+  <div class="bd-modal">
+    <div class="bd-header">
+      <div>
+        <h3 id="bd-title">Enrolments</h3>
+        <div class="bd-sub" id="bd-total"></div>
+      </div>
+      <button class="bd-close" onclick="closeBreakdown()">✕</button>
+    </div>
+    <div class="bd-body" id="bd-rows"></div>
+  </div>
+</div>
+
 </body>
 </html>

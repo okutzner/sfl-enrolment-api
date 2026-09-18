@@ -215,5 +215,96 @@ def enrolments():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/courses")
+def courses():
+    if not check_auth():
+        return jsonify({"error": "Not authenticated"}), 401
+    if not CATALOGUE_TOKEN:
+        return jsonify({"error": "CATALOGUE_TOKEN not set"}), 500
+
+    page = request.args.get("page", 1, type=int)
+    url  = f"{CATALOGUE_URL}/api/v1/courses?per_page=100&page={page}"
+
+    try:
+        r = requests.get(url, headers=HEADERS, verify=False, timeout=25)
+        if r.status_code == 401:
+            return jsonify({"error": "Invalid API token"}), 401
+        r.raise_for_status()
+        data = r.json()
+        page_data = data if isinstance(data, list) else next(
+            (v for v in data.values() if isinstance(v, list)), []
+        )
+        # Keep only the fields the dashboard needs for revenue estimation
+        slim = [{
+            "id": c.get("id"),
+            "canvas_course_id": c.get("canvas_course_id"),
+            "title": c.get("title"),
+            "enrollment_fee": c.get("enrollment_fee"),
+            "currency": c.get("currency"),
+        } for c in page_data]
+        links = {
+            p.split(";")[1].strip().strip('rel="'): p.split(";")[0].strip().strip("<>")
+            for p in r.headers.get("Link", "").split(",") if ";" in p
+        }
+        has_next = "next" in links
+        return jsonify({"courses": slim, "has_next": has_next, "page": page})
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Request to Canvas Catalogue timed out"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/orders")
+def orders():
+    if not check_auth():
+        return jsonify({"error": "Not authenticated"}), 401
+    if not CATALOGUE_TOKEN:
+        return jsonify({"error": "CATALOGUE_TOKEN not set"}), 500
+
+    page = request.args.get("page", 1, type=int)
+    url  = f"{CATALOGUE_URL}/api/v1/analytics/orders?per_page=100&page={page}"
+
+    try:
+        # Unfiltered analytics query — an empty JSON body returns all orders
+        r = requests.post(url, headers=HEADERS, json={}, verify=False, timeout=25)
+        if r.status_code == 401:
+            return jsonify({"error": "Invalid API token"}), 401
+        if r.status_code == 403:
+            return jsonify({"error": "This Catalogue token does not have analytics access"}), 403
+        if r.status_code == 404:
+            return jsonify({"error": "Analytics orders endpoint not found on this Catalogue instance"}), 404
+        r.raise_for_status()
+        data = r.json()
+        page_data = data if isinstance(data, list) else next(
+            (v for v in data.values() if isinstance(v, list)), []
+        )
+        # Keep only the fields the dashboard needs for real-revenue reporting
+        slim = [{
+            "canvas_course_id": o.get("canvas_course_id"),
+            "product_name": (o.get("product") or {}).get("name"),
+            "product_id": (o.get("product") or {}).get("id"),
+            "purchased_at": o.get("purchased_at"),
+            "list_price": o.get("list_price"),
+            "discount": o.get("discount"),
+            "revenue": o.get("revenue"),
+            "currency": o.get("currency"),
+            "promo_codes": o.get("promo_codes") or [],
+            "bulk_purchase": o.get("bulk_purchase"),
+            "seat_count": o.get("seat_count"),
+            "order_id": o.get("order_id"),
+            "order_item_id": o.get("order_item_id"),
+        } for o in page_data]
+        links = {
+            p.split(";")[1].strip().strip('rel="'): p.split(";")[0].strip().strip("<>")
+            for p in r.headers.get("Link", "").split(",") if ";" in p
+        }
+        has_next = "next" in links
+        return jsonify({"orders": slim, "has_next": has_next, "page": page})
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Request to Canvas Catalogue timed out"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
