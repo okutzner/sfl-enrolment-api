@@ -729,7 +729,7 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
       + ", so revenue is estimated as list price × enrolment count — this excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.";
   } else {
     caveatEl.style.display = '';
-    caveatEl.textContent = "Revenue reflects the actual amount paid per Catalogue's order records, including discounts and promo codes. It's grouped by purchase date, which can differ slightly from enrolment date for bulk purchases.";
+    caveatEl.textContent = "Revenue reflects the actual amount paid per Catalogue's order records, including discounts and promo codes. It's grouped by purchase date, which can differ slightly from enrolment date for bulk purchases. Free and government-funded courses are excluded, since no order/payment record exists for them.";
   }
 
 
