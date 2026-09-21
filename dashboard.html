@@ -206,6 +206,7 @@ tr:hover td { background: var(--surface2); }
     <div class="btn-row">
       <button class="btn" id="gen-btn" onclick="generate()">Generate report</button>
       <button class="btn-outline" onclick="window.print()">&#10515; Save as PDF</button>
+      <button class="btn-outline" id="refresh-btn" onclick="generate()" title="Re-fetches enrolment, price, and order data from Canvas/Catalogue. Checkbox and column toggles don't need this — they just re-display data already loaded.">&#10227; Refresh data</button>
       <span style="font-size:12px;color:var(--text3);margin-left:auto" id="last-generated"></span>
     </div>
   </div>
@@ -261,6 +262,7 @@ tr:hover td { background: var(--surface2); }
 const API_URL = '';
 let chartInstances = {};
 let allRows = [];
+if (typeof Chart !== 'undefined') { Chart.defaults.animation = false; Chart.defaults.responsiveAnimationDuration = 0; }
 
 // ── Setup ──
 // API is same-origin, no setup needed
