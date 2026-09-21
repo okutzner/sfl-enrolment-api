@@ -412,12 +412,18 @@ async function generate() {
     // including discounts and promo codes. Bucketed by purchase date.
     const rawOrders = [];
     let ordersFetchFailed = false;
+    let ordersErrorMsg = '';
     try {
       let oPage = 1, oHasNext = true, oCount = 0;
       while(oHasNext) {
         setStatus(`Fetching order revenue... (page ${oPage})`, true);
         const oRes = await fetch(`${API_URL}/orders?page=${oPage}`);
-        if(!oRes.ok) { ordersFetchFailed = true; break; }
+        if(!oRes.ok) {
+          ordersFetchFailed = true;
+          try { const errBody = await oRes.json(); ordersErrorMsg = errBody.error || `HTTP ${oRes.status}`; }
+          catch(e2) { ordersErrorMsg = `HTTP ${oRes.status}`; }
+          break;
+        }
         const oData = await oRes.json();
         rawOrders.push(...(oData.orders || []));
         oHasNext = oData.has_next || false;
@@ -427,9 +433,11 @@ async function generate() {
       }
     } catch(e) {
       ordersFetchFailed = true;
+      ordersErrorMsg = e.message || 'Network error';
     }
     window._rawOrders = rawOrders;
     window._ordersFetchFailed = ordersFetchFailed;
+    window._ordersErrorMsg = ordersErrorMsg;
 
     const courseRevenuePeriod = {}, courseRevenuePrev = {}, courseRevenueAlltime = {};
     const monthlyRevenueTrend = {};
@@ -495,6 +503,38 @@ async function generate() {
     }
     window._revenueCurrency = currency;
 
+    // "Value of enrolments" = actual paid revenue (from Catalogue orders) + estimated
+    // value of enrolments that never went through Catalogue's online checkout at all —
+    // e.g. bulk cohorts enrolled via invoice or an internal process. We can't know their
+    // real price, so those are valued at list price. Identified as: Canvas enrolments for
+    // a course beyond what that course's orders' seat_counts cover, for the same period.
+    const courseUncoveredCountPeriod = {}, courseUncoveredValuePeriod = {};
+    let valueOfEnrolmentsPeriod = null;
+
+    if(!ordersFetchFailed && !priceFetchFailed) {
+      const seatsCoveredPeriod = {};
+      for(const o of rawOrders) {
+        if(!o.purchased_at) continue;
+        const purchased = new Date(o.purchased_at.replace('Z',''));
+        const inPeriod = !fromDt || (purchased >= fromDt && (!toDt || purchased <= toDt));
+        if(!inPeriod) continue;
+        const unit = unitByCanvasId[o.canvas_course_id];
+        if(!unit) continue;
+        seatsCoveredPeriod[unit] = (seatsCoveredPeriod[unit]||0) + (Number(o.seat_count) || 1);
+      }
+      for(const c of allCourses) {
+        const enrolled  = coursePeriod[c] || 0;
+        const covered   = seatsCoveredPeriod[c] || 0;
+        const uncovered = Math.max(0, enrolled - covered);
+        courseUncoveredCountPeriod[c] = uncovered;
+        courseUncoveredValuePeriod[c] = uncovered * priceOf(c);
+      }
+      const uncoveredValueTotal = allCourses.reduce((a,c)=>(a+(courseUncoveredValuePeriod[c]||0)),0);
+      valueOfEnrolmentsPeriod = revenuePeriod + uncoveredValueTotal;
+    }
+    window._courseUncoveredCountPeriod = courseUncoveredCountPeriod;
+    window._courseUncoveredValuePeriod = courseUncoveredValuePeriod;
+
     const fromLabel   = fromDt ? fromDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : null;
     const toLabel     = toDt   ? toDt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})   : null;
     const periodLabel = fromLabel && toLabel ? fromLabel+' — '+toLabel : fromLabel ? 'From '+fromLabel : 'All time';
@@ -504,7 +544,8 @@ async function generate() {
     renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend,
                    {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
                     revenuePeriod, revenuePrev, revenueAlltime, revenuePct, currency, usingEstimate,
-                    courseRevenuePeriod, courseRevenuePrev, courseRevenueAlltime});
+                    courseRevenuePeriod, courseRevenuePrev, courseRevenueAlltime, ordersErrorMsg,
+                    valueOfEnrolmentsPeriod, courseUncoveredCountPeriod, courseUncoveredValuePeriod});
 
   } catch(e) {
     setStatus(`Error: ${e.message}`, false, true);
@@ -633,7 +674,8 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   allRows = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
   const {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
          revenuePeriod=0, revenuePrev=0, revenueAlltime=0, revenuePct=null, currency='AUD',
-         usingEstimate=null, courseRevenuePeriod={}} = meta;
+         usingEstimate=null, courseRevenuePeriod={}, ordersErrorMsg='',
+         valueOfEnrolmentsPeriod=null, courseUncoveredCountPeriod={}, courseUncoveredValuePeriod={}} = meta;
   document.getElementById('dashboard').style.display = 'block';
   window._allCourses = allCourses;
   // Only store as lastRenderArgs if this is NOT a filtered render
@@ -657,21 +699,32 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   const revLabel     = usingEstimate ? 'Estimated revenue' : 'Revenue';
   const allTimeSub   = usingEstimate ? 'cumulative — list price &times; enrolments' : 'cumulative — actual amount paid';
   const revenueCardsHtml = usingEstimate === null
-    ? `<div class="card"><div class="card-label">Revenue</div><div class="card-value" style="color:var(--text3)">N/A</div><div class="card-sub">Couldn't fetch Catalogue price or order data</div></div>`
+    ? `<div class="card"><div class="card-label">Revenue</div><div class="card-value" style="color:var(--text3)">N/A</div><div class="card-sub">${ordersErrorMsg ? 'Orders: '+ordersErrorMsg : "Couldn't fetch Catalogue price or order data"}</div></div>`
     : `<div class="card"><div class="card-label">${revLabel}</div><div class="card-value gold">${money(revenuePeriod)}</div><div class="card-sub ${revPctClass}">in selected period${revPctStr}</div></div>
        <div class="card"><div class="card-label">All-time ${revLabel.toLowerCase()}</div><div class="card-value">${money(revenueAlltime)}</div><div class="card-sub">${allTimeSub}</div></div>`;
+  const uncoveredTotal = allCourses.reduce((a,c)=>a+(courseUncoveredCountPeriod[c]||0),0);
+  const valueCardHtml = valueOfEnrolmentsPeriod === null ? '' : `
+    <div class="card"><div class="card-label">Value of enrolments</div><div class="card-value gold">${money(valueOfEnrolmentsPeriod)}</div><div class="card-sub">paid orders + ${uncoveredTotal.toLocaleString()} bulk/invoice enrolment${uncoveredTotal===1?'':'s'} at list price</div></div>`;
   document.getElementById('summary-cards').innerHTML = `
     <div class="card"><div class="card-label">Total enrolments</div><div class="card-value gold">${totalPeriod.toLocaleString()}</div><div class="card-sub">in selected period</div></div>
     <div class="card"><div class="card-label">vs previous period</div><div class="card-value ${pctClass}">${pctStr}</div><div class="card-sub">${totalPrev.toLocaleString()} previous</div></div>
     <div class="card"><div class="card-label">Active courses</div><div class="card-value">${activeCount}</div><div class="card-sub">with new enrolments</div></div>
     <div class="card"><div class="card-label">All-time total</div><div class="card-value">${totalAlltime.toLocaleString()}</div><div class="card-sub">cumulative enrolments</div></div>
-    ${revenueCardsHtml}`;
+    ${revenueCardsHtml}
+    ${valueCardHtml}`;
   const caveatEl = document.getElementById('revenue-caveat');
   if(usingEstimate === null) {
-    caveatEl.style.display = 'none';
+    if(ordersErrorMsg) {
+      caveatEl.style.display = '';
+      caveatEl.textContent = `Revenue couldn't be loaded — Catalogue orders error: ${ordersErrorMsg}`;
+    } else {
+      caveatEl.style.display = 'none';
+    }
   } else if(usingEstimate) {
     caveatEl.style.display = '';
-    caveatEl.textContent = "Catalogue's order/analytics data wasn't available, so revenue is estimated as list price × enrolment count — this excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.";
+    caveatEl.textContent = "Catalogue's order/analytics data wasn't available"
+      + (ordersErrorMsg ? ` (${ordersErrorMsg})` : '')
+      + ", so revenue is estimated as list price × enrolment count — this excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.";
   } else {
     caveatEl.style.display = '';
     caveatEl.textContent = "Revenue reflects the actual amount paid per Catalogue's order records, including discounts and promo codes. It's grouped by purchase date, which can differ slightly from enrolment date for bulk purchases.";
@@ -852,6 +905,8 @@ function updateCourseFilter() {
   const cRevPeriod  = meta.courseRevenuePeriod  || {};
   const cRevPrev    = meta.courseRevenuePrev    || {};
   const cRevAlltime = meta.courseRevenueAlltime || {};
+  const cUncoveredCount = meta.courseUncoveredCountPeriod || {};
+  const cUncoveredValue = meta.courseUncoveredValuePeriod || {};
 
   // Recalculate meta for filtered courses
   const filteredMeta = {
@@ -865,6 +920,8 @@ function updateCourseFilter() {
     revenuePrev:    filtered.reduce((a,c) => a+(cRevPrev[c]||0), 0),
     revenueAlltime: filtered.reduce((a,c) => a+(cRevAlltime[c]||0), 0),
     revenuePct:   null,
+    valueOfEnrolmentsPeriod: meta.valueOfEnrolmentsPeriod === null ? null :
+      filtered.reduce((a,c) => a+(cRevPeriod[c]||0)+(cUncoveredValue[c]||0), 0),
     periodLabel:  meta.periodLabel + (q ? ' (filtered: "'+q+'")' : ''),
   };
   // Recalculate % change for filtered
