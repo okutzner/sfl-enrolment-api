@@ -7,6 +7,7 @@ import urllib3
 import os
 import hashlib
 import secrets
+from datetime import datetime, timedelta
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -265,8 +266,14 @@ def orders():
     url  = f"{CATALOGUE_URL}/api/v1/analytics/orders?per_page=100&page={page}"
 
     try:
-        # Unfiltered analytics query — an empty JSON body returns all orders
-        r = requests.post(url, headers=HEADERS, json={}, verify=False, timeout=25)
+        # Catalogue rejects a literal {} as "no request body provided" — send a
+        # deliberately wide date range instead, which is effectively unfiltered
+        # but satisfies its non-blank-body validation.
+        filter_body = {
+            "purchase_date_from": "2000-01-01T00:00:00Z",
+            "purchase_date_to": (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        r = requests.post(url, headers=HEADERS, json=filter_body, verify=False, timeout=25)
         if r.status_code == 401:
             return jsonify({"error": "Invalid API token"}), 401
         if r.status_code == 403:
