@@ -273,7 +273,14 @@ def orders():
             return jsonify({"error": "This Catalogue token does not have analytics access"}), 403
         if r.status_code == 404:
             return jsonify({"error": "Analytics orders endpoint not found on this Catalogue instance"}), 404
-        r.raise_for_status()
+        if not r.ok:
+            # Surface Catalogue's own error body (e.g. 400 validation details) instead of a generic message
+            try:
+                body = r.json()
+                detail = body.get("error") or body.get("message") or body.get("errors") or body
+            except Exception:
+                detail = r.text[:500]
+            return jsonify({"error": f"Catalogue returned {r.status_code}: {detail}"}), r.status_code
         data = r.json()
         page_data = data if isinstance(data, list) else next(
             (v for v in data.values() if isinstance(v, list)), []
