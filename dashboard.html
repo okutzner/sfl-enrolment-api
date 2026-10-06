@@ -44,6 +44,11 @@ h1 { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -.02
 .checkbox-item input { width: 13px; height: 13px; accent-color: var(--gold); cursor: pointer; flex-shrink: 0; }
 .checkbox-item label { font-size: 12px; color: #d0d0d0; cursor: pointer; font-weight: 500; }
 .checkbox-item.checked label { color: var(--gold); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--gold-border); background: var(--gold-bg); color: var(--gold); border-radius: 99px; font-size: 12px; font-weight: 500; max-width: 100%; }
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.chip button { background: transparent; border: none; color: var(--gold); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; font-family: inherit; }
+.chip button:hover { color: #fff; }
 .btn { padding: 10px 20px; background: var(--gold); color: #111; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
 .btn:hover:not(:disabled) { background: #d9aa60; }
 .btn:disabled { background: var(--border2); color: var(--text3); cursor: not-allowed; }
@@ -193,14 +198,16 @@ tr:hover td { background: var(--surface2); }
 
       <div class="ctrl-section" style="grid-column:1/-1">
         <div class="ctrl-label">Filter by course</div>
+        <div id="course-chips" class="chip-row" style="display:none"></div>
         <div style="display:flex;gap:8px">
-          <input type="text" id="course-search" list="course-list" placeholder="Type to filter courses (partial match)..." 
+          <input type="text" id="course-search" list="course-list" placeholder="Type to filter, or pick a course from the list to add it..." 
             style="flex:1;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:var(--text);background:var(--surface2);outline:none;font-family:inherit"
-            oninput="updateCourseFilter()"/>
-          <button onclick="clearCourseFilter()" style="padding:7px 12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap">Clear</button>
+            oninput="onCourseInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();addMatchingCourses();}"/>
+          <button onclick="addMatchingCourses()" style="padding:7px 12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap">Add all matches</button>
+          <button onclick="clearCourseFilter()" style="padding:7px 12px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap">Clear all</button>
         </div>
         <datalist id="course-list"></datalist>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">Search by course name or Canvas course number. Course list populates after first report.</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">Select several courses: pick each one from the list, or type part of a name or Canvas course number and press Enter (or "Add all matches") to add every match. Click &times; on a chip to remove it. With nothing selected, typing filters the report live. Course list populates after first report.</div>
       </div>
 
     </div>
@@ -558,11 +565,16 @@ async function generate() {
 
     hideStatus();
     document.getElementById('last-generated').textContent = `Generated ${new Date().toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
-    renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend,
-                   {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
+    const fullMeta = {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
                     revenuePeriod, revenuePrev, revenueAlltime, revenuePct, currency, usingEstimate,
                     courseRevenuePeriod, courseRevenuePrev, courseRevenueAlltime, ordersErrorMsg,
-                    valueOfEnrolmentsPeriod, courseUncoveredCountPeriod, courseUncoveredValuePeriod});
+                    valueOfEnrolmentsPeriod, courseUncoveredCountPeriod, courseUncoveredValuePeriod};
+    // Always keep the full, unfiltered dataset so course selections can be changed without refetching
+    window._originalRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, fullMeta];
+    window._lastRenderArgs = window._originalRenderArgs;
+    populateCourseDropdown(allCourses);
+    if(filterActive()) updateCourseFilter();
+    else renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, fullMeta);
 
   } catch(e) {
     setStatus(`Error: ${e.message}`, false, true);
@@ -698,14 +710,7 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   document.getElementById('dashboard').style.display = 'block';
   document.getElementById('period-banner').innerHTML = 'Reporting period: <strong style="color:var(--gold)">' + periodLabel + '</strong>';
   window._allCourses = allCourses;
-  // Only store as lastRenderArgs if this is NOT a filtered render
-  // _originalRenderArgs always holds the full unfiltered dataset
-  const q = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
-  if(!q) {
-    window._lastRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
-    window._originalRenderArgs = [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta];
-    populateCourseDropdown(allCourses);
-  }
+  // (_originalRenderArgs, the full unfiltered dataset, is stored by generate())
 
   // ── Cards ──
   const pctClass = overallPct === null ? '' : (parseFloat(overallPct) >= 0 ? 'green' : 'red');
@@ -916,12 +921,83 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
   }
 }
 
+// ── Multi-course selection ──
+let selectedCourses = [];
+
+function filterActive() {
+  const q = (document.getElementById('course-search')?.value || '').trim();
+  return selectedCourses.length > 0 || q !== '';
+}
+
+function renderChips() {
+  const box = document.getElementById('course-chips');
+  if(!box) return;
+  box.innerHTML = '';
+  box.style.display = selectedCourses.length ? 'flex' : 'none';
+  selectedCourses.forEach(name => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    const label = document.createElement('span');
+    label.textContent = name;
+    label.title = name;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '\u00d7';
+    x.setAttribute('aria-label', 'Remove ' + name);
+    x.addEventListener('click', () => removeCourse(name));
+    chip.appendChild(label);
+    chip.appendChild(x);
+    box.appendChild(chip);
+  });
+}
+
+function addCourse(name) {
+  if(!selectedCourses.includes(name)) selectedCourses.push(name);
+  renderChips();
+  updateCourseFilter();
+}
+
+function removeCourse(name) {
+  selectedCourses = selectedCourses.filter(c => c !== name);
+  renderChips();
+  updateCourseFilter();
+}
+
+// Fires on every keystroke / datalist pick
+function onCourseInput() {
+  const inp = document.getElementById('course-search');
+  const v = inp.value;
+  const orig = window._originalRenderArgs;
+  // Exact match (i.e. picked from the list) -> add as a selected course
+  if(orig && orig[0].includes(v)) { inp.value = ''; addCourse(v); return; }
+  // Otherwise, with nothing selected, behave as a live partial-match filter
+  if(!selectedCourses.length) updateCourseFilter();
+}
+
+// Enter / "Add all matches": add every course whose name contains the typed text
+function addMatchingCourses() {
+  const inp = document.getElementById('course-search');
+  const q = (inp.value || '').toLowerCase().trim();
+  const orig = window._originalRenderArgs;
+  if(!q || !orig) return;
+  const matches = orig[0].filter(c => c.toLowerCase().includes(q));
+  matches.forEach(c => { if(!selectedCourses.includes(c)) selectedCourses.push(c); });
+  inp.value = '';
+  renderChips();
+  updateCourseFilter();
+}
+
 function updateCourseFilter() {
   if(!window._originalRenderArgs) return;
   const [allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, meta] = window._originalRenderArgs;
   const q = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
-  // Filter courses by partial search term
-  const filtered = q ? allCourses.filter(c => c.toLowerCase().includes(q)) : allCourses;
+  // Selected courses take priority; otherwise fall back to the typed partial match
+  const filtered = selectedCourses.length
+    ? allCourses.filter(c => selectedCourses.includes(c))
+    : (q ? allCourses.filter(c => c.toLowerCase().includes(q)) : allCourses);
+  const filterNote = selectedCourses.length
+    ? ' (filtered: ' + selectedCourses.length + ' course' + (selectedCourses.length===1?'':'s') + ' selected)'
+    : (q ? ' (filtered: "'+q+'")' : '');
 
   const cRevPeriod  = meta.courseRevenuePeriod  || {};
   const cRevPrev    = meta.courseRevenuePrev    || {};
@@ -943,7 +1019,7 @@ function updateCourseFilter() {
     revenuePct:   null,
     valueOfEnrolmentsPeriod: meta.valueOfEnrolmentsPeriod === null ? null :
       filtered.reduce((a,c) => a+(cRevPeriod[c]||0)+(cUncoveredValue[c]||0), 0),
-    periodLabel:  meta.periodLabel + (q ? ' (filtered: "'+q+'")' : ''),
+    periodLabel:  meta.periodLabel + filterNote,
   };
   // Recalculate % change for filtered
   if(filteredMeta.totalPrev > 0) {
@@ -972,6 +1048,8 @@ function populateCourseDropdown(allCourses) {
 function clearCourseFilter() {
   const inp = document.getElementById('course-search');
   if(inp) inp.value = '';
+  selectedCourses = [];
+  renderChips();
   updateCourseFilter();
 }
 
@@ -980,12 +1058,8 @@ function filterTable() {
   const q = (document.getElementById('table-search')?.value||'').toLowerCase();
   const showPeriod = opt('c-col-period'), showPrev = opt('c-col-prev'), showAt = opt('c-col-alltime'),
         showPct = opt('c-col-pct'), showRev = opt('c-col-revenue') && window._usingEstimateRevenue !== null;
-  const courseSearch = (document.getElementById('course-search')?.value || '').toLowerCase().trim();
-  const rows = window._tableData.filter(r=>{
-    if(q && !r.c.toLowerCase().includes(q)) return false;
-    if(courseSearch && !r.c.toLowerCase().includes(courseSearch)) return false;
-    return true;
-  });
+  // Course selection is already applied upstream (updateCourseFilter), so only the table's own search applies here
+  const rows = window._tableData.filter(r=> !q || r.c.toLowerCase().includes(q));
   document.getElementById('table-body').innerHTML = rows.map(({c,p,pv,at,pctHtml,rev})=>`
     <tr>
       <td>${c}</td>
