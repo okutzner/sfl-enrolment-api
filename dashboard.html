@@ -161,16 +161,16 @@ tr:hover td { background: var(--surface2); }
       <div class="ctrl-section">
         <div class="ctrl-label">Date range</div>
         <div class="presets">
-          <button class="preset-btn" onclick="setPreset('all',this)">All time</button>
-          <button class="preset-btn" onclick="setPreset('thismonth',this)">This month</button>
-          <button class="preset-btn active" onclick="setPreset('lastmonth',this)">Last month</button>
-          <button class="preset-btn" onclick="setPreset('last3',this)">Last 3 months</button>
-          <button class="preset-btn" onclick="setPreset('ytd',this)">Year to date</button>
-          <button class="preset-btn" onclick="setPreset('custom',this)">Custom</button>
+          <button class="preset-btn" onclick="presetClick('all',this)">All time</button>
+          <button class="preset-btn" onclick="presetClick('thismonth',this)">This month</button>
+          <button class="preset-btn active" onclick="presetClick('lastmonth',this)">Last month</button>
+          <button class="preset-btn" onclick="presetClick('last3',this)">Last 3 months</button>
+          <button class="preset-btn" onclick="presetClick('ytd',this)">Year to date</button>
+          <button class="preset-btn" onclick="presetClick('custom',this)">Custom</button>
         </div>
         <div class="date-row" id="custom-dates" style="display:none">
-          <div class="date-field"><label>From</label><input type="date" id="date-from" onchange="markCustom()"/></div>
-          <div class="date-field"><label>To</label><input type="date" id="date-to" onchange="markCustom()"/></div>
+          <div class="date-field"><label>From</label><input type="date" id="date-from" onchange="onCustomDateChange()"/></div>
+          <div class="date-field"><label>To</label><input type="date" id="date-to" onchange="onCustomDateChange()"/></div>
         </div>
       </div>
 
@@ -327,7 +327,7 @@ function setStatus(msg, loading, error) {
 }
 function hideStatus(){ document.getElementById('status-bar').style.display = 'none'; }
 
-// ── Generate ──
+// ── Generate: fetch data from the API, then compute + render ──
 async function generate() {
   // API_URL is same-origin for web app version
   const from = document.getElementById('date-from').value;
@@ -336,17 +336,11 @@ async function generate() {
 
   const btn = document.getElementById('gen-btn');
   btn.disabled = true; btn.textContent = 'Loading...';
+  window._loading = true;
   document.getElementById('dashboard').style.display = 'none';
   setStatus('Fetching enrolments from Canvas Catalogue...', true);
 
   try {
-    const fromDt     = from ? new Date(from + 'T00:00:00') : null;
-    const toDt       = to   ? new Date(to   + 'T23:59:59') : null;
-    window._periodFrom = fromDt; window._periodTo = toDt;
-    const periodDays = (fromDt && toDt) ? (toDt - fromDt) / 86400000 : 365;
-    const prevToDt   = fromDt ? new Date(fromDt - 1000) : null;
-    const prevFromDt = prevToDt ? new Date(prevToDt - periodDays * 86400000) : null;
-
     // Fetch all pages one at a time to avoid backend timeout
     let enrolments = [], page = 1, hasNext = true;
     while(hasNext) {
@@ -388,6 +382,74 @@ async function generate() {
     }
     window._priceById = priceById;
     window._priceFetchFailed = priceFetchFailed;
+
+    // Fetch real revenue (Catalogue analytics/orders) — reflects actual amounts paid,
+    // including discounts and promo codes. Bucketed by purchase date.
+    const rawOrders = [];
+    let ordersFetchFailed = false;
+    let ordersErrorMsg = '';
+    try {
+      let oPage = 1, oHasNext = true, oCount = 0;
+      while(oHasNext) {
+        setStatus(`Fetching order revenue... (page ${oPage})`, true);
+        const oRes = await fetch(`${API_URL}/orders?page=${oPage}`);
+        if(!oRes.ok) {
+          ordersFetchFailed = true;
+          try { const errBody = await oRes.json(); ordersErrorMsg = errBody.error || `HTTP ${oRes.status}`; }
+          catch(e2) { ordersErrorMsg = `HTTP ${oRes.status}`; }
+          break;
+        }
+        const oData = await oRes.json();
+        rawOrders.push(...(oData.orders || []));
+        oHasNext = oData.has_next || false;
+        oPage++;
+        oCount++;
+        if(oCount > 500) break;
+      }
+    } catch(e) {
+      ordersFetchFailed = true;
+      ordersErrorMsg = e.message || 'Network error';
+    }
+    window._rawOrders = rawOrders;
+    window._ordersFetchFailed = ordersFetchFailed;
+    window._ordersErrorMsg = ordersErrorMsg;
+
+    // Keep everything fetched so date ranges can be changed instantly without refetching
+    window._data = { enrolments, priceById, priceFetchFailed, rawOrders, ordersFetchFailed, ordersErrorMsg };
+    document.getElementById('last-generated').textContent = `Generated ${new Date().toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
+    computeAndRender();
+
+  } catch(e) {
+    setStatus(`Error: ${e.message}`, false, true);
+  } finally {
+    window._loading = false;
+    btn.disabled = false; btn.textContent = 'Generate report';
+  }
+}
+
+// ── Compute metrics for the currently selected date range from already-loaded data (no network) ──
+function computeAndRender() {
+  const D = window._data;
+  if(!D) return;
+  const { enrolments, priceById, priceFetchFailed, rawOrders, ordersFetchFailed, ordersErrorMsg } = D;
+
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
+  if(from && to && new Date(from) > new Date(to)){ setStatus('From date must be before To date.', false, true); return; }
+
+  const fromDt     = from ? new Date(from + 'T00:00:00') : null;
+  const toDt       = to   ? new Date(to   + 'T23:59:59') : null;
+  window._periodFrom = fromDt; window._periodTo = toDt;
+  const periodDays = (fromDt && toDt) ? (toDt - fromDt) / 86400000 : 365;
+  const prevToDt   = fromDt ? new Date(fromDt - 1000) : null;
+  const prevFromDt = prevToDt ? new Date(prevToDt - periodDays * 86400000) : null;
+
+  window._rawEnrolments = enrolments;
+  window._priceById = priceById;
+  window._priceFetchFailed = priceFetchFailed;
+  window._rawOrders = rawOrders;
+  window._ordersFetchFailed = ordersFetchFailed;
+  window._ordersErrorMsg = ordersErrorMsg;
 
     const coursePeriod  = {}, coursePrev = {}, courseAlltime = {};
     const monthlyTrend  = {};
@@ -432,36 +494,6 @@ async function generate() {
     const activeCount  = allCourses.filter(c=>(coursePeriod[c]||0)>0).length;
     const overallPct   = totalPrev > 0 ? ((totalPeriod-totalPrev)/totalPrev*100).toFixed(1) : null;
 
-    // Fetch real revenue (Catalogue analytics/orders) — reflects actual amounts paid,
-    // including discounts and promo codes. Bucketed by purchase date.
-    const rawOrders = [];
-    let ordersFetchFailed = false;
-    let ordersErrorMsg = '';
-    try {
-      let oPage = 1, oHasNext = true, oCount = 0;
-      while(oHasNext) {
-        setStatus(`Fetching order revenue... (page ${oPage})`, true);
-        const oRes = await fetch(`${API_URL}/orders?page=${oPage}`);
-        if(!oRes.ok) {
-          ordersFetchFailed = true;
-          try { const errBody = await oRes.json(); ordersErrorMsg = errBody.error || `HTTP ${oRes.status}`; }
-          catch(e2) { ordersErrorMsg = `HTTP ${oRes.status}`; }
-          break;
-        }
-        const oData = await oRes.json();
-        rawOrders.push(...(oData.orders || []));
-        oHasNext = oData.has_next || false;
-        oPage++;
-        oCount++;
-        if(oCount > 500) break;
-      }
-    } catch(e) {
-      ordersFetchFailed = true;
-      ordersErrorMsg = e.message || 'Network error';
-    }
-    window._rawOrders = rawOrders;
-    window._ordersFetchFailed = ordersFetchFailed;
-    window._ordersErrorMsg = ordersErrorMsg;
 
     const courseRevenuePeriod = {}, courseRevenuePrev = {}, courseRevenueAlltime = {};
     const monthlyRevenueTrend = {};
@@ -564,7 +596,6 @@ async function generate() {
     const periodLabel = fromLabel && toLabel ? fromLabel+' — '+toLabel : fromLabel ? 'From '+fromLabel : 'All time';
 
     hideStatus();
-    document.getElementById('last-generated').textContent = `Generated ${new Date().toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
     const fullMeta = {totalPeriod, totalPrev, totalAlltime, activeCount, overallPct, periodLabel,
                     revenuePeriod, revenuePrev, revenueAlltime, revenuePct, currency, usingEstimate,
                     courseRevenuePeriod, courseRevenuePrev, courseRevenueAlltime, ordersErrorMsg,
@@ -576,11 +607,22 @@ async function generate() {
     if(filterActive()) updateCourseFilter();
     else renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, monthlyTrend, fullMeta);
 
-  } catch(e) {
-    setStatus(`Error: ${e.message}`, false, true);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Generate report';
-  }
+}
+
+// ── Date range buttons: apply immediately ──
+function presetClick(p, el) {
+  setPreset(p, el);
+  if(p === 'custom') return;        // wait for the user to choose dates
+  applyDateRange();
+}
+function applyDateRange() {
+  if(window._loading) return;       // a fetch is in flight; it will read the latest dates when it finishes
+  if(window._data) computeAndRender();   // data already loaded: just re-slice it
+  else generate();                       // first time: fetch, then render
+}
+function onCustomDateChange() {
+  markCustom();
+  if(window._data && !window._loading) computeAndRender();
 }
 
 let currentMA = 3;
@@ -784,7 +826,25 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
     } else {
       Object.assign(trendByMonth, monthlyTrend);
     }
-    const sortedMonths = Object.keys(trendByMonth).sort();
+    // Build a continuous month axis (months with no enrolments show as 0, so the line and the
+    // moving average aren't distorted). With a date range selected the axis spans that range;
+    // with "All time" / "Trend: full history" it spans the first to last month that has data.
+    const dataKeys = Object.keys(trendByMonth).sort();
+    const monthKey = (y, m) => y+'-'+String(m+1).padStart(2,'0');
+    let sortedMonths = dataKeys;
+    if(dataKeys.length || window._periodFrom) {
+      const useRange = !opt('c-trend-full') && window._periodFrom;
+      const first = useRange ? window._periodFrom : new Date(dataKeys[0] + '-01T00:00:00');
+      const lastSrc = (useRange && window._periodTo) ? window._periodTo
+                    : (dataKeys.length ? new Date(dataKeys[dataKeys.length-1] + '-01T00:00:00') : first);
+      let y = first.getFullYear(), m = first.getMonth();
+      const endY = lastSrc.getFullYear(), endM = lastSrc.getMonth();
+      sortedMonths = [];
+      while((y < endY || (y === endY && m <= endM)) && sortedMonths.length < 600) {
+        sortedMonths.push(monthKey(y, m));
+        m++; if(m > 11){ m = 0; y++; }
+      }
+    }
     const tLabels = sortedMonths.map(m=>{ const d=new Date(m+'-01'); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); });
     const tData   = sortedMonths.map(m=>trendByMonth[m]||0);
     // Store for the click-to-breakdown handler
