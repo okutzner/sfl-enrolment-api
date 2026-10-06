@@ -272,7 +272,9 @@ if (typeof Chart !== 'undefined') { Chart.defaults.animation = false; Chart.defa
 
 // ── Date presets ──
 function pad(n){ return String(n).padStart(2,'0'); }
-function fmt(d){ return d.toISOString().split('T')[0]; }
+// Format a Date as YYYY-MM-DD using LOCAL date parts (toISOString() converts to UTC and
+// shifts the date by a day for users ahead of UTC, e.g. Perth).
+function fmt(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
 function setPreset(p, el) {
   document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
