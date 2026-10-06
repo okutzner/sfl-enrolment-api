@@ -164,8 +164,8 @@ tr:hover td { background: var(--surface2); }
           <button class="preset-btn" onclick="setPreset('custom',this)">Custom</button>
         </div>
         <div class="date-row" id="custom-dates" style="display:none">
-          <div class="date-field"><label>From</label><input type="date" id="date-from"/></div>
-          <div class="date-field"><label>To</label><input type="date" id="date-to"/></div>
+          <div class="date-field"><label>From</label><input type="date" id="date-from" onchange="markCustom()"/></div>
+          <div class="date-field"><label>To</label><input type="date" id="date-to" onchange="markCustom()"/></div>
         </div>
       </div>
 
@@ -176,6 +176,7 @@ tr:hover td { background: var(--surface2); }
           <div class="checkbox-item checked" id="w-bar"><input type="checkbox" id="c-bar" checked onchange="toggleCheck('w-bar',this)"/><label for="c-bar">Top courses</label></div>
           <div class="checkbox-item checked" id="w-compare"><input type="checkbox" id="c-compare" checked onchange="toggleCheck('w-compare',this)"/><label for="c-compare">Comparison</label></div>
           <div class="checkbox-item checked" id="w-table"><input type="checkbox" id="c-table" checked onchange="toggleCheck('w-table',this)"/><label for="c-table">Data table</label></div>
+          <div class="checkbox-item" id="w-trend-full"><input type="checkbox" id="c-trend-full" onchange="toggleCheck('w-trend-full',this)"/><label for="c-trend-full">Trend: full history</label></div>
         </div>
       </div>
 
@@ -219,6 +220,7 @@ tr:hover td { background: var(--surface2); }
   <!-- Dashboard -->
   <div class="dashboard" id="dashboard">
 
+    <div id="period-banner" style="font-size:13px;color:var(--text2);margin:0 0 .75rem"></div>
     <div class="cards" id="summary-cards"></div>
     <div id="revenue-caveat" style="font-size:11px;color:var(--text3);margin:-0.75rem 0 1.5rem">Revenue is estimated as Catalogue list price &times; Canvas enrolment count — it excludes discounts, promo codes, bulk-purchase pricing, and refunds, and uses each course's current price for all-time figures.</div>
 
@@ -286,6 +288,16 @@ function setPreset(p, el) {
   document.getElementById('date-from').value = fmt(from);
   document.getElementById('date-to').value   = fmt(to);
 }
+function markCustom() {
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+  const btns = document.querySelectorAll('.preset-btn');
+  btns[btns.length-1].classList.add('active');
+}
+// True if a Date falls inside the selected report period (or no period is set)
+function inPeriodRange(dt) {
+  const f = window._periodFrom, t = window._periodTo;
+  return (!f || dt >= f) && (!t || dt <= t);
+}
 // Default to last month
 setPreset('lastmonth', document.querySelectorAll('.preset-btn')[1]);
 
@@ -321,6 +333,7 @@ async function generate() {
   try {
     const fromDt     = from ? new Date(from + 'T00:00:00') : null;
     const toDt       = to   ? new Date(to   + 'T23:59:59') : null;
+    window._periodFrom = fromDt; window._periodTo = toDt;
     const periodDays = (fromDt && toDt) ? (toDt - fromDt) / 86400000 : 365;
     const prevToDt   = fromDt ? new Date(fromDt - 1000) : null;
     const prevFromDt = prevToDt ? new Date(prevToDt - periodDays * 86400000) : null;
@@ -615,6 +628,7 @@ function showMonthBreakdown(index) {
     if(!unit || !courses.includes(unit)) continue;
     if(!enr.enrolled_at) continue;
     const dt = new Date(enr.enrolled_at.replace('Z',''));
+    if(!opt('c-trend-full') && !inPeriodRange(dt)) continue;
     const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
     if(mk !== monthKey) continue;
     if(!byCourse[unit]) byCourse[unit] = { count: 0, revenue: 0, fee: priceById[listing.id]?.fee || 0 };
@@ -627,6 +641,7 @@ function showMonthBreakdown(index) {
     for(const o of rawOrders) {
       if(!o.purchased_at) continue;
       const dt = new Date(o.purchased_at.replace('Z',''));
+      if(!opt('c-trend-full') && !inPeriodRange(dt)) continue;
       const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
       if(mk !== monthKey) continue;
       const unit = unitByCanvasId[o.canvas_course_id];
@@ -679,6 +694,7 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
          usingEstimate=null, courseRevenuePeriod={}, ordersErrorMsg='',
          valueOfEnrolmentsPeriod=null, courseUncoveredCountPeriod={}, courseUncoveredValuePeriod={}} = meta;
   document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('period-banner').innerHTML = 'Reporting period: <strong style="color:var(--gold)">' + periodLabel + '</strong>';
   window._allCourses = allCourses;
   // Only store as lastRenderArgs if this is NOT a filtered render
   // _originalRenderArgs always holds the full unfiltered dataset
@@ -754,6 +770,7 @@ function renderDashboard(allCourses, coursePeriod, coursePrev, courseAlltime, mo
         if(!unit || !allCourses.includes(unit)) continue;
         const dt = enr.enrolled_at ? new Date(enr.enrolled_at.replace('Z','')) : null;
         if(!dt) continue;
+        if(!opt('c-trend-full') && !inPeriodRange(dt)) continue;
         const mk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
         trendByMonth[mk] = (trendByMonth[mk]||0) + 1;
       }
